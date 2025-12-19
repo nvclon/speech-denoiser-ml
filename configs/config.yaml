@@ -1,0 +1,52 @@
+defaults:
+  - data: dataset
+  - audio: audio
+  - model: dae
+  - mlflow: tracking
+  - _self_
+
+seed: 42
+project_name: "Speech Denoiser"
+
+paths:
+  artifacts_dir: "artifacts"
+  checkpoints_dir: "${paths.artifacts_dir}/checkpoints"
+  onnx_dir: "${paths.artifacts_dir}/onnx"
+  predictions_dir: "${paths.artifacts_dir}/predictions"
+  plots_dir: "plots/${model.model_name}"
+  triton_repo_dir: "${paths.artifacts_dir}/triton/${model.model_name}"
+
+trainer:
+  max_epochs: 5
+  accelerator: "auto"
+  devices: "auto"
+  precision: 32
+  accumulate_grad_batches: 1
+  fast_dev_run: false
+  limit_train_batches: 1.0
+  limit_val_batches: 1.0
+  num_sanity_val_steps: 2
+  log_every_n_steps: 50
+
+infer:
+  ckpt_path: null
+  input_wav: null
+  output_dir: "${paths.predictions_dir}"
+
+eval:
+  ckpt_path: null
+  save_wavs: false
+  output_dir: "${paths.predictions_dir}/test"
+  metrics_csv: "${paths.plots_dir}/test_metrics.csv"
+
+export:
+  ckpt_path: null
+  opset: 17
+
+triton:
+  model_name: "denoiser_onnx"
+  model_version: 1
+  model_repo_dir: "${paths.triton_repo_dir}"
+  url: "127.0.0.1:8000"
+  input_wav: null
+  output_dir: "${paths.predictions_dir}/triton"

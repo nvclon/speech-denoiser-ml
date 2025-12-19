@@ -6,21 +6,47 @@ authors = ["vetoshkin.is <114411040+nvclon@users.noreply.github.com>"]
 readme = "README.md"
 packages = [{include = "speech_denoiser"}]
 
-[tool.poetry.dependencies]
-python = ">=3.12,<3.15"
+[tool.poetry.scripts]
+speech-denoiser = "speech_denoiser.commands:main"
 
-torch = ">=2.9.1,<3.0.0"
-torchaudio = ">=2.9.1,<3.0.0"
+[tool.poetry.dependencies]
+python = ">=3.10,<3.15"
+
+torch = ">=2.6.0,<3.0.0"
+torchaudio = ">=2.6.0,<3.0.0"
 pytorch-lightning = ">=2.6.0,<3.0.0"
 hydra-core = ">=1.3.2,<2.0.0"
-dvc = ">=3.64.2,<4.0.0"
+dvc = {version = ">=3.64.2,<4.0.0", extras = ["gdrive"]}
 mlflow = ">=3.7.0,<4.0.0"
+fire = "^0.7.1"
+matplotlib = "^3.10.0"
+soundfile = "^0.13.1"
+onnx = ">=1.16.0,<2.0.0"
+onnxscript = ">=0.3.0,<1.0.0"
+pyopenssl = "24.2.1"
+gdown = "^5.2.0"
+demucs = {version = ">=4.0.1,<5.0.0", optional = true}
+# Triton Python client wheels are primarily published for Linux.
+# On Windows, installing `tritonclient` often fails due to missing native wheels (e.g. perf-analyzer).
+tritonclient = {version = ">=2.41.0,<3.0.0", extras = ["http"], optional = true, markers = "platform_system != 'Windows'"}
+
+[tool.poetry.extras]
+demucs = ["demucs"]
+triton = ["tritonclient"]
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = ">=4.5.1,<5.0.0"
 black = ">=25.12.0,<26.0.0"
 isort = ">=7.0.0,<8.0.0"
 flake8 = ">=7.3.0,<8.0.0"
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

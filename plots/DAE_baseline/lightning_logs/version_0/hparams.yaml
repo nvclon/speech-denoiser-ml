@@ -1,0 +1,9 @@
+model_name: DAE_baseline
+learning_rate: 0.001
+loss_function: si_sdr_loss
+optimizer: Adam
+dae_num_layers: 4
+dae_kernel_size: 5
+demucs_channels: 32
+demucs_depth: 4
+demucs_kernel_size: 5

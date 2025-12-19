@@ -1,0 +1,9 @@
+model_name: "demucs_v3_tiny"
+
+learning_rate: 0.0003
+optimizer: "Adam"
+loss_function: "si_sdr_loss"
+
+channels: 32
+depth: 4
+kernel_size: 8

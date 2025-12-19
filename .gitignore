@@ -205,3 +205,11 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# DVC Google Drive credentials (DO NOT COMMIT)
+*service-account*.json
+*service_account*.json
+gdrive-sa.json
+gdrive_service_account.json
+.dvc/*service-account*.json
+.dvc/*service_account*.json

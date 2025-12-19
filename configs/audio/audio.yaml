@@ -1,0 +1,4 @@
+sample_rate: 16000
+segment_length: 4
+n_fft: 512
+hop_length: 128

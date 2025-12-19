@@ -1,0 +1,12 @@
+data_dir: "data"
+train_clean_path: "${data.data_dir}/train/clean"
+train_noisy_path: "${data.data_dir}/train/noisy"
+test_noisy_path: "${data.data_dir}/test/noisy_testset_wav"
+test_clean_path: "${data.data_dir}/test/clean_testset_wav"
+
+# Public Google Drive folder link containing the `data/` contents.
+# Used as a fallback (or primary) dataset download method via `gdown`.
+gdrive_folder_url: "https://drive.google.com/drive/folders/1G7f4ZarLk7swJq3SeLddBw1YBXaCrWuR?usp=sharing"
+
+batch_size: 8
+num_workers: 7
