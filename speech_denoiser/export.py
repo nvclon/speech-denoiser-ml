@@ -13,7 +13,12 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def export_onnx(cfg: DictConfig) -> None:
+def _safe_name(name: str) -> str:
+    name = name.strip() or "model"
+    return "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in name)
+
+
+def export_onnx(cfg: DictConfig) -> Path:
     repo_root = _repo_root()
 
     ckpt_path = cfg.export.ckpt_path
@@ -33,12 +38,7 @@ def export_onnx(cfg: DictConfig) -> None:
     ensure_dir(onnx_dir)
 
     model_name = str(getattr(module.hparams, "model_name", ""))
-    model_name_lower = model_name.lower()
-    if model_name_lower.startswith("demucs"):
-        raise RuntimeError(
-            "ONNX export for Demucs is not supported in this project yet. "
-            "Use a DAE checkpoint for Triton/ONNX/TensorRT packaging."
-        )
+    safe_model_name = _safe_name(model_name)
 
     # Dummy input length matters for some architectures.
     sample_rate = int(cfg.audio.sample_rate)
@@ -47,7 +47,8 @@ def export_onnx(cfg: DictConfig) -> None:
     dummy_len = int(round(dummy_seconds * sample_rate))
     dummy = torch.zeros(1, 1, dummy_len, dtype=torch.float32)
 
-    out_path = onnx_dir / "denoiser.onnx"
+    out_model_dir = ensure_dir(onnx_dir / safe_model_name)
+    out_path = out_model_dir / "denoiser.onnx"
 
     torch.onnx.export(
         module,
@@ -58,3 +59,5 @@ def export_onnx(cfg: DictConfig) -> None:
         dynamic_axes={"noisy": {2: "time"}, "clean": {2: "time"}},
         opset_version=int(cfg.export.opset),
     )
+
+    return out_path

@@ -22,10 +22,10 @@ def _write_text(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def _triton_config_pbtxt(model_name: str, max_batch_size: int = 8) -> str:
-    # ONNX model has input/output: [B, 1, T] with dynamic T.
-    # Triton uses dims without the batch dimension.
-    # dims: [channels=1, time=-1]
+def _triton_config_pbtxt(model_name: str, max_batch_size: int = 0) -> str:
+    # By default we disable Triton batching (max_batch_size=0).
+    # Our current ONNX export uses a fixed batch dimension of 1.
+    # Therefore Triton must see the full tensor shape including that dimension.
     return (
         f'name: "{model_name}"\n'
         f'platform: "onnxruntime_onnx"\n'
@@ -34,14 +34,14 @@ def _triton_config_pbtxt(model_name: str, max_batch_size: int = 8) -> str:
         "  {\n"
         '    name: "noisy"\n'
         "    data_type: TYPE_FP32\n"
-        "    dims: [ 1, -1 ]\n"
+        "    dims: [ 1, 1, -1 ]\n"
         "  }\n"
         "]\n"
         "output [\n"
         "  {\n"
         '    name: "clean"\n'
         "    data_type: TYPE_FP32\n"
-        "    dims: [ 1, -1 ]\n"
+        "    dims: [ 1, 1, -1 ]\n"
         "  }\n"
         "]\n"
     )
@@ -58,13 +58,8 @@ def prepare_triton_repo(cfg: DictConfig) -> None:
 
     repo_root = _repo_root()
 
-    # Export ONNX to artifacts/onnx/denoiser.onnx
-    export_onnx(cfg)
-
-    onnx_dir = Path(str(cfg.paths.onnx_dir))
-    if not onnx_dir.is_absolute():
-        onnx_dir = repo_root / onnx_dir
-    onnx_path = onnx_dir / "denoiser.onnx"
+    # Export ONNX (path may be model-specific, e.g. artifacts/onnx/<model>/denoiser.onnx)
+    onnx_path = export_onnx(cfg)
     if not onnx_path.exists():
         raise FileNotFoundError(f"ONNX was not created at: {onnx_path}")
 
@@ -79,8 +74,15 @@ def prepare_triton_repo(cfg: DictConfig) -> None:
     dst_onnx = model_dir / "model.onnx"
     dst_onnx.write_bytes(onnx_path.read_bytes())
 
+    # Torch ONNX export may use the "external data" format and store weights in a
+    # sidecar file named like `<onnx_filename>.data` (e.g. `denoiser.onnx.data`).
+    # ONNXRuntime will look for that exact file name at runtime.
+    onnx_data_path = onnx_path.with_name(onnx_path.name + ".data")
+    if onnx_data_path.exists():
+        (model_dir / onnx_data_path.name).write_bytes(onnx_data_path.read_bytes())
+
     config_path = model_repo_dir / model_name / "config.pbtxt"
-    _write_text(config_path, _triton_config_pbtxt(model_name=model_name, max_batch_size=8))
+    _write_text(config_path, _triton_config_pbtxt(model_name=model_name, max_batch_size=0))
 
     # Helpful metadata for debugging / reproducibility
     meta_path = model_repo_dir / model_name / "meta.json"
@@ -159,7 +161,8 @@ def triton_infer(cfg: DictConfig) -> None:
         out_dir = repo_root / out_dir
     ensure_dir(out_dir)
 
-    out_path = out_dir / f"triton_denoised_{input_path.stem}.wav"
+    safe_model_name = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in model_name)
+    out_path = out_dir / f"triton_{safe_model_name}_denoised_{input_path.stem}.wav"
     pred_mono = np.asarray(pred[0, 0]).astype("float32")
     sf.write(str(out_path), pred_mono, samplerate=sample_rate)
 

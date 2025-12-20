@@ -57,8 +57,60 @@ def try_gdown_folder(url: str, output_dir: Path) -> None:
 
     ensure_dir(output_dir)
 
-    # gdown may download into output_dir/<folder_name>/...; we normalize below.
-    gdown.download_folder(url=url, output=str(output_dir), quiet=False, use_cookies=False)
+    # Try downloading as a folder first (if it's a folder link)
+    # If it fails or if it's a file link, gdown might handle it differently.
+    # For robustness: check if it looks like a file ID or folder.
+    # But gdown.download_folder is specific.
+    # Let's try to download as an archive if folder download fails or if we decide to support zips.
+
+    # Strategy:
+    # 1. Try download as file (archive). Folder links may fail or return HTML.
+    # 2. If that file is a valid zip, extract it.
+    # 3. If not, try download_folder.
+
+    # However, distinguishing by URL is hard. Let's assume if the user provides a ZIP link,
+    # they want it extracted.
+
+    # Simplified approach: try to download as a file to a temp location.
+    # If it's a zip, extract. If not, try folder.
+
+    # Actually, let's just support the ZIP workflow explicitly as it's more reliable for datasets.
+
+    import shutil
+    import zipfile
+
+    # Temporary path for potential zip download
+    temp_zip = output_dir / "dataset_temp.zip"
+
+    print(f"[INFO] Attempting to download from {url}...")
+
+    # Try downloading as a single file (archive)
+    downloaded_path = gdown.download(
+        url=url,
+        output=str(temp_zip),
+        quiet=False,
+        fuzzy=True,
+    )
+
+    downloaded_ok = bool(downloaded_path) and Path(str(downloaded_path)).exists()
+    downloaded_is_zip = downloaded_ok and zipfile.is_zipfile(str(downloaded_path))
+
+    if downloaded_is_zip:
+        print(f"[INFO] Downloaded archive: {downloaded_path}. Extracting...")
+        shutil.unpack_archive(str(downloaded_path), extract_dir=output_dir)
+        Path(str(downloaded_path)).unlink()
+    else:
+        # Not a zip: try folder download (common for Drive folder links).
+        if temp_zip.exists():
+            temp_zip.unlink()
+
+        print("[INFO] Not a zip archive. Trying gdown.download_folder...")
+        gdown.download_folder(
+            url=url,
+            output=str(output_dir),
+            quiet=False,
+            use_cookies=False,
+        )
 
     # If we ended up with output_dir/<single_subdir>/(train|test), move up one level.
     if _is_expected_data_layout(output_dir):

@@ -1,5 +1,5 @@
 param(
-  [string]$OnnxPath = "artifacts/onnx/denoiser.onnx",
+  [string]$OnnxPath = "artifacts/onnx/DAE_baseline/denoiser.onnx",
   [string]$TritonRepo = "artifacts/triton",
   [string]$ModelName = "denoiser_trt",
   [int]$ModelVersion = 1,

@@ -41,10 +41,10 @@ eval:
 
 export:
   ckpt_path: null
-  opset: 17
+  opset: 18
 
 triton:
-  model_name: "denoiser_onnx"
+  model_name: "denoiser_onnx_${model.model_name}"
   model_version: 1
   model_repo_dir: "${paths.triton_repo_dir}"
   url: "127.0.0.1:8000"

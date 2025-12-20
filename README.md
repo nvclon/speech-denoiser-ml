@@ -212,15 +212,40 @@ poetry run speech-denoiser infer \
 ```bash
 poetry run speech-denoiser prepare_triton_repo \
 	model=dae export.ckpt_path=artifacts/checkpoints/latest_DAE_baseline.ckpt
+
+# Demucs (если вы обучили/скачали чекпойнт):
+poetry run speech-denoiser prepare_triton_repo \
+   model=demucs export.ckpt_path=artifacts/checkpoints/latest_demucs_v3_tiny.ckpt
 ```
 
-По умолчанию имя модели для Triton: `denoiser_onnx`, путь берётся из Hydra: `paths.triton_repo_dir`.
+По умолчанию имя модели для Triton: `denoiser_onnx_${model.model_name}` (чтобы можно было держать несколько моделей в одном репозитории), путь берётся из Hydra: `paths.triton_repo_dir`.
+
+Если хотите поднять **сразу DAE + Demucs в одном Triton**, соберите общий model repo:
+
+```bash
+poetry run speech-denoiser prepare_triton_repo \
+   model=dae export.ckpt_path=artifacts/checkpoints/latest_DAE_baseline.ckpt \
+   triton.model_repo_dir=artifacts/triton/all
+
+poetry run speech-denoiser prepare_triton_repo \
+   model=demucs export.ckpt_path=artifacts/checkpoints/latest_demucs_v3_tiny.ckpt \
+   triton.model_repo_dir=artifacts/triton/all
+```
+
+И запуск Triton тогда делайте на `artifacts/triton/all`.
 
 ### 2) Запустить Triton Server
 
 Требуется Docker + NVIDIA Container Toolkit (или WSL2 с GPU).
 
-PowerShell:
+Linux/WSL:
+
+```bash
+chmod +x scripts/run_triton.sh
+./scripts/run_triton.sh artifacts/triton/DAE_baseline
+```
+
+Windows (PowerShell):
 
 ```powershell
 ./scripts/run_triton.ps1 -ModelRepo artifacts/triton/DAE_baseline
@@ -257,8 +282,17 @@ poetry run speech-denoiser triton_infer \
 
 Можно собрать TensorRT engine из ONNX через `trtexec` в NVIDIA контейнере:
 
+Linux/WSL:
+
+```bash
+chmod +x scripts/build_trt_engine.sh
+./scripts/build_trt_engine.sh artifacts/onnx/DAE_baseline/denoiser.onnx artifacts/triton/DAE_baseline
+```
+
+Windows (PowerShell):
+
 ```powershell
-./scripts/build_trt_engine.ps1 -OnnxPath artifacts/onnx/denoiser.onnx -TritonRepo artifacts/triton/DAE_baseline
+./scripts/build_trt_engine.ps1 -OnnxPath artifacts/onnx/DAE_baseline/denoiser.onnx -TritonRepo artifacts/triton/DAE_baseline
 ```
 
 Далее нужно добавить `config.pbtxt` для TensorRT backend (`platform: tensorrt_plan`).

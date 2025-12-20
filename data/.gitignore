@@ -1,2 +1,6 @@
 /train
 /test
+dataset.zip
+*.wav
+*.flac
+*.mp3

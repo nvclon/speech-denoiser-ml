@@ -213,3 +213,33 @@ gdrive-sa.json
 gdrive_service_account.json
 .dvc/*service-account*.json
 .dvc/*service_account*.json
+
+# --- Project-specific generated artifacts (DO NOT COMMIT) ---
+
+# Training/inference artifacts
+artifacts/
+
+# Local MLflow default directory
+mlruns/
+
+# Datasets / large archives
+data/**/*.wav
+data/**/*.flac
+data/**/*.mp3
+data/dataset.zip
+
+# Plots and logs are generated during training
+plots/**
+!plots/.gitkeep
+!plots/README.md
+
+# Model / export artifacts (safety net)
+*.ckpt
+*.pth
+*.pt
+*.onnx
+*.onnx.data
+*.engine
+*.plan
+*.wav
+*.zip

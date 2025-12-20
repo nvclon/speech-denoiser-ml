@@ -1,2 +1,0 @@
-epoch,step,train/loss_epoch,train/loss_step,val/loss,val/si_sdr
-0,1245,-7.217549800872803,,,
