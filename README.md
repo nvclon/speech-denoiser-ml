@@ -69,7 +69,7 @@ Both models use PyTorch Lightning for training and support multiple loss functio
 1. **Clone the repository**
 
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/nvclon/speech-denoiser-ml
    cd speech-denoiser-ml
    ```
 
