@@ -222,11 +222,11 @@ Per-file CSV outputs:
 
 Source: `data/test/noisy_testset_wav/p232_001.wav`
 
-[Noisy](assets/readme/p232_001_noisy_5s.wav)
+[Noisy](assets/readme/p232_001_noisy_5s.mp4)
 
-[DAE_baseline denoised](assets/readme/p232_001_DAE_baseline_denoised_5s.wav)
+[DAE_baseline denoised](assets/readme/p232_001_DAE_baseline_denoised_5s.mp4)
 
-[demucs_v3_tiny denoised](assets/readme/p232_001_demucs_v3_tiny_denoised_5s.wav)
+[demucs_v3_tiny denoised](assets/readme/p232_001_demucs_v3_tiny_denoised_5s.mp4)
 
 ## Production Deployment
 
