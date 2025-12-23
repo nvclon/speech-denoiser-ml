@@ -73,29 +73,28 @@ Both models use PyTorch Lightning for training and support multiple loss functio
    cd speech-denoiser-ml
    ```
 
-2. **Create and activate a Python environment** (Python ≥3.10, <3.15)
-
-   ```bash
-   python -m venv venv
-   source venv/bin/activate
-   ```
-
-3. **Install dependencies with Poetry**
+2. **Install Poetry**
 
    ```bash
    pip install poetry
-   poetry install --with dev
    ```
 
-4. **Optional: Install model-specific extras**
+3. **Install dependencies (creates Poetry virtualenv)**
 
    ```bash
-   # For Demucs model support
-   poetry install --with dev -E demucs
+   poetry install --with dev
 
-   # For Triton inference server support (Linux only)
-   poetry install --with dev -E triton
+   # Optional extras
+   poetry install --with dev -E demucs -E triton
    ```
+
+4. **Enter the Poetry environment**
+
+   ```bash
+   poetry shell
+   ```
+
+   All commands below assume you are inside `poetry shell`.
 
 5. **Install pre-commit hooks** (for code quality)
 
@@ -104,8 +103,9 @@ Both models use PyTorch Lightning for training and support multiple loss functio
    ```
 
 6. **Verify installation**
+
    ```bash
-   poetry run python -c "import torch; print('PyTorch:', torch.__version__); print('CUDA available:', torch.cuda.is_available())"
+   python -c "import torch; print('PyTorch:', torch.__version__); print('CUDA available:', torch.cuda.is_available())"
    ```
 
 ### Data Preparation
@@ -113,7 +113,7 @@ Both models use PyTorch Lightning for training and support multiple loss functio
 Data is automatically pulled from DVC storage when needed. To manually restore:
 
 ```bash
-poetry run speech-denoiser dvc_pull
+speech-denoiser dvc_pull
 ```
 
 This will run `dvc pull` and, on a clean machine, download+extract `dvcstore.tar.gz` (from `dvc.store_url`) into `../dvcstore` and retry.
@@ -124,23 +124,23 @@ This will run `dvc pull` and, on a clean machine, download+extract `dvcstore.tar
 
 ```bash
 # Default config (demucs model, see configs/config.yaml)
-poetry run speech-denoiser train
+speech-denoiser train
 
 # Or explicitly use DAE
-poetry run speech-denoiser train model=dae
+speech-denoiser train model=dae
 
 # With custom hyperparameters
-poetry run speech-denoiser train model=dae trainer.max_epochs=20 dataset.batch_size=32 model.learning_rate=0.0005
+speech-denoiser train model=dae trainer.max_epochs=20 dataset.batch_size=32 model.learning_rate=0.0005
 ```
 
 ### Train Demucs v3 Tiny
 
 ```bash
 # Use demucs config
-poetry run speech-denoiser train model=demucs
+speech-denoiser train model=demucs
 
 # With SI-SDR + L1 loss (alpha=0.15)
-poetry run speech-denoiser train model=demucs model.loss_function=si_sdr_l1 model.loss_alpha=0.15
+speech-denoiser train model=demucs model.loss_function=si_sdr_l1 model.loss_alpha=0.15
 ```
 
 ### Training Output
@@ -173,11 +173,11 @@ loss_alpha: 0.1
 
 ```bash
 # Hydra overrides
-poetry run speech-denoiser infer model=demucs \
+speech-denoiser infer model=demucs \
    infer.input_wav=/path/to/noisy_audio.wav
 
 # Optionally override checkpoint/output
-poetry run speech-denoiser infer model=demucs \
+speech-denoiser infer model=demucs \
    infer.input_wav=/path/to/noisy_audio.wav \
    infer.ckpt_path=artifacts/checkpoints/latest_demucs_v3_tiny.ckpt \
    infer.output_dir=artifacts/predictions
@@ -188,9 +188,9 @@ poetry run speech-denoiser infer model=demucs \
 ### Evaluate on test set
 
 ```bash
-poetry run speech-denoiser eval_test model=demucs
+speech-denoiser eval_test model=demucs
 
-poetry run speech-denoiser eval_test model=demucs eval.save_wavs=true # Strongly not recommended!!
+speech-denoiser eval_test model=demucs eval.save_wavs=true # Strongly not recommended!!
 ```
 
 **Output:** Test metrics saved to `plots/<model_name>/test_metrics.csv`
@@ -202,8 +202,8 @@ poetry run speech-denoiser eval_test model=demucs eval.save_wavs=true # Strongly
 Reproduce:
 
 ```bash
-poetry run speech-denoiser eval_test model=dae
-poetry run speech-denoiser eval_test model=demucs
+speech-denoiser eval_test model=dae
+speech-denoiser eval_test model=demucs
 ```
 
 Results (run on 23 Dec 2025):
@@ -222,19 +222,11 @@ Per-file CSV outputs:
 
 Source: `data/test/noisy_testset_wav/p232_001.wav`
 
-
-
 https://github.com/user-attachments/assets/a9c32ca5-06a4-4639-ab6e-51645ac041c9
-
-
 
 https://github.com/user-attachments/assets/f396792e-f614-4ec6-b092-35a839dbb1da
 
-
-
 https://github.com/user-attachments/assets/feb5b3d5-cb8e-47f5-ba9f-be8f520a2545
-
-
 
 ## Production Deployment
 
@@ -244,7 +236,7 @@ ONNX format enables deployment to various backends (CPU/GPU inference engines).
 
 ```bash
 # Export the latest checkpoint to ONNX
-poetry run speech-denoiser export_onnx model=demucs export.ckpt_path=artifacts/checkpoints/latest_demucs_v3_tiny.ckpt
+speech-denoiser export_onnx model=demucs export.ckpt_path=artifacts/checkpoints/latest_demucs_v3_tiny.ckpt
 
 # Outputs: artifacts/onnx/demucs_v3_tiny/denoiser.onnx
 ```
@@ -271,11 +263,11 @@ For serving via [Triton Inference Server](https://developer.nvidia.com/triton-in
 
 ```bash
 # onnx
-poetry run speech-denoiser prepare_triton_repo model=dae server.backend=onnx
-poetry run speech-denoiser prepare_triton_repo model=demucs server.backend=onnx
+speech-denoiser prepare_triton_repo model=dae server.backend=onnx
+speech-denoiser prepare_triton_repo model=demucs server.backend=onnx
 
 # TensorRT
-poetry run speech-denoiser prepare_triton_repo model=dae server.backend=trt
+speech-denoiser prepare_triton_repo model=dae server.backend=trt
 ```
 
 Creates directory structure:
@@ -324,7 +316,7 @@ Triton will start on:
 
 ```bash
 # Test with Hydra config override
-poetry run speech-denoiser triton_infer model=dae server.input_wav=/path/to/audio.wav
+speech-denoiser triton_infer model=dae server.input_wav=/path/to/audio.wav
 ```
 
 ## Configuration & Hyperparameters
@@ -371,6 +363,7 @@ configs/
 Training runs are automatically logged to MLflow if available:
 
 ```bash
+# Run inside `poetry shell`
 mlflow ui
 ```
 
@@ -486,7 +479,7 @@ For reproducible results:
 To reproduce training:
 
 ```bash
-poetry run speech-denoiser train model=demucs
+speech-denoiser train model=demucs
 ```
 
 ## Dependencies
@@ -526,6 +519,7 @@ mlflow ui --host 127.0.0.1 --port 8080
 Ensure DVC remote is configured and accessible:
 
 ```bash
+# Run inside `poetry shell`
 dvc remote list
 dvc pull
 ```
@@ -535,7 +529,7 @@ dvc pull
 Check PyTorch CUDA setup:
 
 ```bash
-poetry run python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name())"
+python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name())"
 ```
 
 If CUDA is not available, PyTorch will automatically use CPU.
