@@ -1,8 +1,12 @@
 model_name: "demucs_v3_tiny"
 
 learning_rate: 0.0003
-optimizer: "Adam"
-loss_function: "si_sdr_loss"
+optimizer: "AdamW"
+
+# Loss configuration
+# Available loss functions: "si_sdr_loss", "si_sdr_l1", "si_sdr_l2"
+loss_function: "si_sdr_l2"
+loss_alpha: 0.1 # weight for auxiliary loss (L1 or L2)
 
 channels: 32
 depth: 4

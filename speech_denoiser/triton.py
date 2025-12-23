@@ -22,13 +22,19 @@ def _write_text(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def _triton_config_pbtxt(model_name: str, max_batch_size: int = 0) -> str:
-    # By default we disable Triton batching (max_batch_size=0).
-    # Our current ONNX export uses a fixed batch dimension of 1.
-    # Therefore Triton must see the full tensor shape including that dimension.
+def _triton_config_pbtxt(
+    model_name: str, platform: str = "onnxruntime_onnx", max_batch_size: int = 0
+) -> str:
+    """Generate Triton config.pbtxt for ONNX or TensorRT backend.
+
+    Args:
+        model_name: Triton model name
+        platform: "onnxruntime_onnx" for ONNX, "tensorrt_plan" for TensorRT
+        max_batch_size: max batch size (0 = dynamic batching disabled)
+    """
     return (
         f'name: "{model_name}"\n'
-        f'platform: "onnxruntime_onnx"\n'
+        f'platform: "{platform}"\n'
         f"max_batch_size: {max_batch_size}\n"
         "input [\n"
         "  {\n"
@@ -47,57 +53,90 @@ def _triton_config_pbtxt(model_name: str, max_batch_size: int = 0) -> str:
     )
 
 
-def prepare_triton_repo(cfg: DictConfig) -> None:
-    """Prepare a Triton model repository for ONNXRuntime backend.
+def prepare_triton_repo(cfg: DictConfig, backend: str | None = None) -> None:
+    """Prepare Triton model repository.
 
-    Steps:
-    1) Export ONNX (uses export.ckpt_path).
-    2) Create model repo folder: <repo>/denoiser_onnx/1/model.onnx
-    3) Write config.pbtxt.
+    Creates structure:
+        triton/<model_name>/<backend>/
+            ├── 1/model.(onnx|plan)
+            ├── config.pbtxt
+            └── meta.json
+
+    Args:
+        cfg: Hydra config
+        backend: "onnx" or "trt". If None, uses cfg.server.backend
     """
-
+    if backend is None:
+        backend = str(cfg.server.backend)
     repo_root = _repo_root()
+    model_name = str(cfg.model.model_name)
+    model_version = int(cfg.server.model_version)
 
-    # Export ONNX (path may be model-specific, e.g. artifacts/onnx/<model>/denoiser.onnx)
-    onnx_path = export_onnx(cfg)
-    if not onnx_path.exists():
-        raise FileNotFoundError(f"ONNX was not created at: {onnx_path}")
+    if backend == "onnx":
+        # ONNX backend
+        artifacts_onnx = repo_root / "artifacts" / "onnx" / model_name / "denoiser.onnx"
+        onnx_path = artifacts_onnx if artifacts_onnx.exists() else export_onnx(cfg)
+        if not onnx_path.exists():
+            raise FileNotFoundError(f"ONNX export failed: {onnx_path}")
 
-    model_repo_dir = Path(str(cfg.triton.model_repo_dir))
-    if not model_repo_dir.is_absolute():
-        model_repo_dir = repo_root / model_repo_dir
+        triton_dir = repo_root / "triton" / model_name / "onnx"
+        version_dir = ensure_dir(triton_dir / str(model_version))
 
-    model_name = str(cfg.triton.model_name)
-    model_version = int(cfg.triton.model_version)
+        # Copy ONNX file
+        dst_onnx = version_dir / "model.onnx"
+        dst_onnx.write_bytes(onnx_path.read_bytes())
 
-    model_dir = ensure_dir(model_repo_dir / model_name / str(model_version))
-    dst_onnx = model_dir / "model.onnx"
-    dst_onnx.write_bytes(onnx_path.read_bytes())
+        # Copy external data if exists
+        onnx_data_path = onnx_path.with_name(onnx_path.name + ".data")
+        if onnx_data_path.exists():
+            (version_dir / onnx_data_path.name).write_bytes(onnx_data_path.read_bytes())
 
-    # Torch ONNX export may use the "external data" format and store weights in a
-    # sidecar file named like `<onnx_filename>.data` (e.g. `denoiser.onnx.data`).
-    # ONNXRuntime will look for that exact file name at runtime.
-    onnx_data_path = onnx_path.with_name(onnx_path.name + ".data")
-    if onnx_data_path.exists():
-        (model_dir / onnx_data_path.name).write_bytes(onnx_data_path.read_bytes())
+        platform = "onnxruntime_onnx"
+        backend_name = "onnxruntime"
+        source_file = str(onnx_path)
 
-    config_path = model_repo_dir / model_name / "config.pbtxt"
-    _write_text(config_path, _triton_config_pbtxt(model_name=model_name, max_batch_size=0))
+    elif backend == "trt":
+        # TensorRT backend
+        trt_path = repo_root / "artifacts" / "trt" / model_name / "denoiser.plan"
+        if not trt_path.exists():
+            raise FileNotFoundError(
+                f"TensorRT file not found: {trt_path}\n"
+                f"Run: bash scripts/build_trt_engine.sh artifacts/onnx/{model_name}/denoiser.onnx"
+            )
 
-    # Helpful metadata for debugging / reproducibility
-    meta_path = model_repo_dir / model_name / "meta.json"
+        triton_dir = repo_root / "triton" / model_name / "trt"
+        version_dir = ensure_dir(triton_dir / str(model_version))
+
+        # Copy TensorRT file
+        dst_plan = version_dir / "model.plan"
+        dst_plan.write_bytes(trt_path.read_bytes())
+
+        platform = "tensorrt_plan"
+        backend_name = "tensorrt"
+        source_file = str(trt_path)
+
+    else:
+        raise ValueError(f"Unknown backend: {backend}. Use 'onnx' or 'trt'.")
+
+    # Write config.pbtxt
+    config_path = triton_dir / "config.pbtxt"
+    _write_text(config_path, _triton_config_pbtxt(model_name, platform=platform))
+
+    # Write metadata
+    meta_path = triton_dir / "meta.json"
     meta = {
-        "source_onnx": str(onnx_path),
+        "backend": backend_name,
         "model_name": model_name,
         "model_version": model_version,
+        "source_file": source_file,
         "sample_rate": int(cfg.audio.sample_rate),
         "input": {"name": "noisy", "dtype": "FP32", "shape": ["B", 1, "T"]},
         "output": {"name": "clean", "dtype": "FP32", "shape": ["B", 1, "T"]},
     }
     _write_text(meta_path, json.dumps(meta, indent=2))
 
-    print(f"[OK] Triton model repo prepared at: {model_repo_dir}")
-    print(f"[OK] Model: {model_name}, version: {model_version}")
+    print(f"[OK] Triton {backend.upper()} repo: {triton_dir}")
+    print(f"[OK] Model: {model_name} v{model_version}")
 
 
 def _to_mono(audio_2d: np.ndarray) -> torch.Tensor:
@@ -126,9 +165,9 @@ def triton_infer(cfg: DictConfig) -> None:
 
     repo_root = _repo_root()
 
-    input_wav = getattr(cfg.triton, "input_wav", None)
+    input_wav = getattr(cfg.server, "input_wav", None)
     if input_wav is None:
-        raise ValueError("triton.input_wav is required")
+        raise ValueError("server.input_wav is required")
 
     input_path = Path(str(input_wav))
     if not input_path.is_absolute():
@@ -144,8 +183,8 @@ def triton_infer(cfg: DictConfig) -> None:
     # Triton expects numpy input
     noisy = wav.unsqueeze(0).cpu().numpy().astype(np.float32)  # [1, 1, T]
 
-    model_name = str(cfg.triton.model_name)
-    url = str(cfg.triton.url)
+    model_name = str(cfg.server.model_name)
+    url = str(cfg.server.url)
 
     client = httpclient.InferenceServerClient(url=url, verbose=False)
 
@@ -156,7 +195,7 @@ def triton_infer(cfg: DictConfig) -> None:
     result = client.infer(model_name=model_name, inputs=inputs, outputs=outputs)
     pred = result.as_numpy("clean")  # [1, 1, T]
 
-    out_dir = Path(str(cfg.triton.output_dir))
+    out_dir = Path(str(cfg.server.output_dir))
     if not out_dir.is_absolute():
         out_dir = repo_root / out_dir
     ensure_dir(out_dir)

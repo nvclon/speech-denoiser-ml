@@ -14,7 +14,7 @@ from speech_denoiser.export import export_onnx
 from speech_denoiser.infer import infer
 from speech_denoiser.train import train
 from speech_denoiser.triton import prepare_triton_repo, triton_infer
-from speech_denoiser.utils import try_gdown_folder
+from speech_denoiser.utils import dvc_pull_with_bootstrap
 
 
 def _repo_root() -> Path:
@@ -54,19 +54,36 @@ class _CLI:
         cfg = _compose_cfg(list(overrides))
         triton_infer(cfg)
 
-    def download_data(self, url: str | None = None, output_dir: str | None = None) -> None:
-        cfg = _compose_cfg([])
+    def dvc_pull(self) -> None:
+        """Run `dvc pull`.
+
+        If `dvc pull` fails (e.g. on a clean machine without `../dvcstore`), this will:
+        - Download `dvcstore.tar.gz` from `dvc.store_url` (configs/config.yaml)
+        - Extract it into `dvc.store_dir` (default: ../dvcstore)
+        - Retry `dvc pull`
+
+        Usage:
+            poetry run speech-denoiser dvc_pull
+        """
+
         repo_root = _repo_root()
+        cfg = _compose_cfg([])
 
-        resolved_url = url or getattr(cfg.data, "gdrive_folder_url", None)
-        if not resolved_url:
-            raise ValueError("Google Drive folder URL is not set")
+        store_url = getattr(getattr(cfg, "dvc", None), "store_url", None)
+        store_dir_cfg = getattr(getattr(cfg, "dvc", None), "store_dir", "../dvcstore")
+        remote_name = getattr(getattr(cfg, "dvc", None), "remote_name", "local_data")
+        store_dir = (repo_root / str(store_dir_cfg)).resolve()
 
-        data_dir = Path(output_dir) if output_dir else repo_root / str(cfg.data.data_dir)
-        if not data_dir.is_absolute():
-            data_dir = repo_root / data_dir
-
-        try_gdown_folder(str(resolved_url), output_dir=data_dir)
+        ok = dvc_pull_with_bootstrap(
+            repo_root,
+            store_url=store_url,
+            store_dir=store_dir,
+            remote_name=str(remote_name),
+        )
+        if ok:
+            print("[OK] DVC pull completed")
+        else:
+            print("[ERROR] DVC pull failed")
 
     def setup_cuda(
         self,
@@ -118,3 +135,7 @@ class _CLI:
 
 def main() -> None:
     fire.Fire(_CLI)
+
+
+if __name__ == "__main__":
+    main()

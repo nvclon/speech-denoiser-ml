@@ -1,0 +1,17 @@
+stages:
+  data:
+    cmd: "true"
+    outs:
+      - data/test:
+          persist: true
+      - data/train:
+          persist: true
+  artifacts:
+    cmd: "true"
+    outs:
+      - artifacts/checkpoints:
+          persist: true
+      - artifacts/onnx:
+          persist: true
+      - artifacts/trt:
+          persist: true

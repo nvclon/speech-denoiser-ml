@@ -1,3 +1,3 @@
 tracking_uri: "http://127.0.0.1:8080"
-experiment_name: "Speech Denoiser MLOps"
-run_name: "dae_baseline_${now:%Y%m%d_%H%M%S}"
+experiment_name: "Speech Denoiser - ${model.model_name}"
+run_name: "${model.model_name}_${now:%Y%m%d_%H%M%S}"

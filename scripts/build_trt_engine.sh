@@ -1,23 +1,57 @@
 #!/bin/bash
-ONNX_PATH=${1:-"artifacts/onnx/DAE_baseline/denoiser.onnx"}
-TRITON_REPO=${2:-"artifacts/triton"}
-MODEL_NAME=${3:-"denoiser_trt"}
-MODEL_VERSION=${4:-1}
-IMAGE=${5:-"nvcr.io/nvidia/tensorrt:24.09-py3"}
+# build_trt_engine.sh
+
+ONNX_PATH=$1  # например: artifacts/onnx/DAE_baseline/denoiser.onnx
+
+if [ -z "$ONNX_PATH" ]; then
+  echo "Usage: $0 <path_to_onnx>"
+  exit 1
+fi
+
+# Извлекаем модель из пути (DAE_baseline или demucs_v3_tiny)
+MODEL_DIR=$(basename $(dirname "$ONNX_PATH"))
+
+# Проверка: TensorRT не поддерживает Demucs
+if [[ "$MODEL_DIR" == *"demucs"* ]]; then
+  echo ""
+  echo "======================================================================"
+  echo "ERROR: TensorRT backend not supported for $MODEL_DIR"
+  echo "======================================================================"
+  echo ""
+  echo "Reason:"
+  echo "  Demucs uses dynamic shapes (-1 time dimension) for variable-length"
+  echo "  audio input. TensorRT requires fixed tensor shapes and cannot"
+  echo "  reshape tensors with incompatible dimensions."
+  echo ""
+  echo "Solutions:"
+  echo "  1. Use ONNX backend instead (recommended):"
+  echo "     poetry run speech-denoiser prepare_triton_repo model=demucs triton.backend=onnx"
+  echo ""
+  echo "  2. Use DAE_baseline for TensorRT (fully compatible):"
+  echo "     bash scripts/build_trt_engine.sh artifacts/onnx/DAE_baseline/denoiser.onnx"
+  echo ""
+  echo "======================================================================"
+  echo ""
+  exit 1
+fi
 
 ONNX_ABS=$(realpath "$ONNX_PATH")
-REPO_ABS=$(realpath "$TRITON_REPO")
-ENGINE_DIR="$REPO_ABS/$MODEL_NAME/$MODEL_VERSION"
+OUTPUT_DIR="artifacts/trt/$MODEL_DIR"
+mkdir -p "$OUTPUT_DIR"
 
-mkdir -p "$ENGINE_DIR"
-
-echo "[INFO] ONNX: $ONNX_ABS"
-echo "[INFO] Engine output: $ENGINE_DIR/model.plan"
+echo "[INFO] Converting: $ONNX_ABS"
+echo "[INFO] Output: $OUTPUT_DIR/denoiser.plan"
 
 docker run --rm --gpus=all \
-  -v "$ONNX_ABS:/onnx/denoiser.onnx" \
-  -v "$REPO_ABS:/models" \
-  "$IMAGE" \
-  trtexec --onnx=/onnx/denoiser.onnx --saveEngine=/models/$MODEL_NAME/$MODEL_VERSION/model.plan --fp16
+  --user "$(id -u):$(id -g)" \
+  -v "$(dirname "$ONNX_ABS"):/onnx" \
+  -v "$(realpath "$OUTPUT_DIR"):/output" \
+  nvcr.io/nvidia/tensorrt:24.09-py3 \
+  trtexec --onnx=/onnx/denoiser.onnx \
+          --saveEngine=/output/denoiser.plan \
+          --fp16 \
+          --minShapes=noisy:1x1x16000 \
+          --optShapes=noisy:1x1x48000 \
+          --maxShapes=noisy:1x1x160000
 
-echo "[INFO] Done. Create config.pbtxt for TensorRT backend (platform: tensorrt_plan)."
+echo "[INFO] Done: $OUTPUT_DIR/denoiser.plan"

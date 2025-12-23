@@ -1,6 +1,6 @@
-/train
-/test
 dataset.zip
 *.wav
 *.flac
 *.mp3
+/train
+/test

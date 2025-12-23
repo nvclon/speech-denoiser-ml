@@ -27,106 +27,108 @@ def git_commit_id(repo_root: Path) -> str | None:
         return None
 
 
-def try_dvc_pull(repo_root: Path, targets: list[str] | None = None) -> None:
-    cmd = ["dvc", "pull"]
-    if targets:
-        cmd.extend(targets)
+def dvc_pull_with_bootstrap(
+    repo_root: Path,
+    *,
+    store_url: str | None,
+    store_dir: Path,
+    remote_name: str = "local_data",
+) -> bool:
+    """Run `dvc pull` and bootstrap local dvcstore from an archive if needed.
 
-    try:
-        subprocess.run(cmd, cwd=str(repo_root), check=True)
-    except Exception as e:
-        # DVC remote may be unavailable on a clean machine.
-        print(f"[WARN] dvc pull failed: {e}")
+    Flow:
+    1) Try `dvc pull -r <remote_name>`.
+    2) If it fails, download `dvcstore.tar.gz` from store_url, extract into the
+       parent of store_dir, ensure store_dir exists, then retry `dvc pull`.
 
-
-def try_gdown_folder(url: str, output_dir: Path) -> None:
-    """Download a public Google Drive folder using gdown.
-
-    This avoids interactive OAuth flows (which may be blocked for some accounts).
+    Returns:
+        True if `dvc pull` eventually succeeds, else False.
     """
 
-    if not url:
-        raise ValueError("Google Drive folder URL is empty")
-
-    try:
-        import gdown  # type: ignore
-    except Exception as e:
-        raise RuntimeError(
-            "gdown is not installed. Install it (e.g. `poetry add gdown`) and retry."
-        ) from e
-
-    ensure_dir(output_dir)
-
-    # Try downloading as a folder first (if it's a folder link)
-    # If it fails or if it's a file link, gdown might handle it differently.
-    # For robustness: check if it looks like a file ID or folder.
-    # But gdown.download_folder is specific.
-    # Let's try to download as an archive if folder download fails or if we decide to support zips.
-
-    # Strategy:
-    # 1. Try download as file (archive). Folder links may fail or return HTML.
-    # 2. If that file is a valid zip, extract it.
-    # 3. If not, try download_folder.
-
-    # However, distinguishing by URL is hard. Let's assume if the user provides a ZIP link,
-    # they want it extracted.
-
-    # Simplified approach: try to download as a file to a temp location.
-    # If it's a zip, extract. If not, try folder.
-
-    # Actually, let's just support the ZIP workflow explicitly as it's more reliable for datasets.
-
-    import shutil
-    import zipfile
-
-    # Temporary path for potential zip download
-    temp_zip = output_dir / "dataset_temp.zip"
-
-    print(f"[INFO] Attempting to download from {url}...")
-
-    # Try downloading as a single file (archive)
-    downloaded_path = gdown.download(
-        url=url,
-        output=str(temp_zip),
-        quiet=False,
-        fuzzy=True,
-    )
-
-    downloaded_ok = bool(downloaded_path) and Path(str(downloaded_path)).exists()
-    downloaded_is_zip = downloaded_ok and zipfile.is_zipfile(str(downloaded_path))
-
-    if downloaded_is_zip:
-        print(f"[INFO] Downloaded archive: {downloaded_path}. Extracting...")
-        shutil.unpack_archive(str(downloaded_path), extract_dir=output_dir)
-        Path(str(downloaded_path)).unlink()
-    else:
-        # Not a zip: try folder download (common for Drive folder links).
-        if temp_zip.exists():
-            temp_zip.unlink()
-
-        print("[INFO] Not a zip archive. Trying gdown.download_folder...")
-        gdown.download_folder(
-            url=url,
-            output=str(output_dir),
-            quiet=False,
-            use_cookies=False,
+    def _run_pull() -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["dvc", "pull", "-r", str(remote_name)],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
         )
 
-    # If we ended up with output_dir/<single_subdir>/(train|test), move up one level.
-    if _is_expected_data_layout(output_dir):
-        return
-
-    subdirs = [p for p in output_dir.iterdir() if p.is_dir()]
-    if len(subdirs) != 1:
-        return
-    only = subdirs[0]
-    if not _is_expected_data_layout(only):
-        return
-
-    for child in only.iterdir():
-        child.replace(output_dir / child.name)
     try:
-        only.rmdir()
-    except OSError:
-        # If non-empty for any reason, keep it.
-        pass
+        first = _run_pull()
+    except FileNotFoundError:
+        print("[WARN] dvc command not found; cannot pull.")
+        return False
+
+    if first.returncode == 0:
+        return True
+
+    if not store_url:
+        # Keep it short; callers can decide what to do next.
+        print("[WARN] dvc pull failed and no dvc.store_url is configured.")
+        if first.stderr:
+            print(first.stderr)
+        return False
+
+    # Bootstrap local store from archive
+    try:
+        try:
+            import gdown  # type: ignore
+        except Exception as e:
+            print(f"[WARN] gdown is not installed: {e}")
+            return False
+
+        import shutil
+
+        store_dir = store_dir.resolve()
+        parent_dir = store_dir.parent
+        archive_path = parent_dir / "dvcstore.tar.gz"
+
+        print("[INFO] dvc pull failed; bootstrapping local dvcstore from archive...")
+        print(f"[INFO] Downloading: {store_url}")
+        parent_dir.mkdir(parents=True, exist_ok=True)
+
+        downloaded_path = gdown.download(
+            url=store_url,
+            output=str(archive_path),
+            quiet=False,
+            fuzzy=True,
+        )
+        if not downloaded_path or not archive_path.exists():
+            print("[WARN] Failed to download dvcstore.tar.gz")
+            return False
+
+        print(f"[INFO] Extracting: {archive_path} -> {parent_dir}")
+        shutil.unpack_archive(str(archive_path), extract_dir=str(parent_dir))
+
+        # Expected layout: parent_dir/dvcstore/...
+        if not store_dir.exists():
+            extracted_default = parent_dir / "dvcstore"
+            if extracted_default.exists() and extracted_default != store_dir:
+                # Move to configured store_dir
+                store_dir.mkdir(parents=True, exist_ok=True)
+                for child in extracted_default.iterdir():
+                    shutil.move(str(child), str(store_dir / child.name))
+                try:
+                    extracted_default.rmdir()
+                except OSError:
+                    pass
+            else:
+                # Fallback: archive may contain `files/` directly
+                files_dir = parent_dir / "files"
+                if files_dir.exists():
+                    store_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(files_dir), str(store_dir / "files"))
+
+        if not store_dir.exists():
+            print(f"[WARN] dvcstore not found after extraction at {store_dir}")
+            return False
+
+        second = _run_pull()
+        if second.returncode == 0:
+            return True
+        if second.stderr:
+            print(second.stderr)
+        return False
+    except Exception as e:
+        print(f"[WARN] dvcstore bootstrap failed: {e}")
+        return False

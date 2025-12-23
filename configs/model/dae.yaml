@@ -1,8 +1,11 @@
 model_name: "DAE_baseline"
-learning_rate: 0.001
-epochs: 5
-loss_function: "si_sdr_loss"
-optimizer: "Adam"
+learning_rate: 0.0003
+optimizer: "AdamW"
+
+# Loss configuration
+# Available loss functions: "si_sdr_loss", "si_sdr_l1", "si_sdr_l2"
+loss_function: "si_sdr_l2"
+loss_alpha: 0.1 # weight for auxiliary loss (L1 or L2)
 
 num_layers: 4
 kernel_size: 5

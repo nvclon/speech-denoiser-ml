@@ -1,5 +1,4 @@
 [core]
-    remote = gdrive_data
-['remote "gdrive_data"']
-    url = gdrive://1G7f4ZarLk7swJq3SeLddBw1YBXaCrWuR
-    gdrive_use_service_account = false
+    remote = local_data
+['remote "local_data"']
+    url = ../../dvcstore

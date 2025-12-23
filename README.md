@@ -1,298 +1,526 @@
-# Speech Denoiser (MLOps project)
+# Speech Denoiser
 
-Проект: **шумоподавление речи (Speech Enhancement) при помощи нейросетей**.
+A neural network-based speech enhancement (denoising) system to improve audio quality by removing background noise from noisy speech signals.
 
-Автор: **Ветошкин Иван Сергеевич**
+**Author:** Ivan Vetoshkin
 
-## Problem statement
+## Problem Statement
 
-Цель проекта — обучить модель шумоподавления речи, которая преобразует зашумлённый аудиосигнал в очищенный.
-Применения: онлайн-звонки, голосовые ассистенты, распознавание речи (Speech-to-Text).
+This project aims to train a speech denoising model that transforms noisy audio signals into clean, enhanced speech.
 
-**Вход:** `wav` с шумом.
+**Applications:**
 
-**Выход:** `wav` с очищенной речью.
+- Online calls (VoIP, conferencing)
+- Voice assistants
+- Speech recognition (Speech-to-Text)
+- Audio processing pipelines
+
+**Input:** WAV audio file with background noise
+**Output:** WAV audio file with enhanced/denoised speech
 
 ## Metrics
 
-Основная метрика качества: **SI-SDR** (Scale-Invariant Signal-to-Distortion Ratio).
+The primary quality metric is **SI-SDR** (Scale-Invariant Signal-to-Distortion Ratio), measured in dB.
 
-Целевой ориентир: порядка **5–6 dB SI‑SDR** (в литературе для Demucs встречаются значения около ~6 dB).
+**Target:** ~5–6 dB SI-SDR (in line with published results for Demucs architecture)
 
 ## Data
 
-Датасет: пары (noisy, clean) `wav`.
+The dataset consists of paired (noisy, clean) WAV audio samples.
 
-Разделение:
+**Data Split:**
 
-- Валидация: 15% дикторов из train
-- Тест: 15% дикторов из train (отдельный test split остаётся неизменным)
+- Train: 28 speakers (~6Gb overall)
+- Validation: 15% of train speakers
+- Test: seperate dataset
 
-Для воспроизводимости фиксируются сиды разбиения и обучения.
+**Noise types:** 8 real (DEMAND dataset) + 2 synthetic
+**SNR levels:** Train: {0, 5, 10, 15} dB | Test: {2.5, 7.5, 12.5, 17.5} dB
 
-Хранение данных: **DVC**.
+**Storage:** Data is managed via [DVC](https://dvc.org) with local storage backend.
 
 ## Models
 
-- Baseline: **DAE** (convolutional denoising autoencoder на 1D-свертках).
-- Вторая модель: **Demucs** (используется реализация из https://github.com/facebookresearch/demucs через PyPI-пакет `demucs`).
+### DAE (Denoising Autoencoder) - Baseline
 
-## Setup
+A lightweight convolutional autoencoder using 1D convolutions and transposed convolutions.
 
-Требования:
+**Architecture:**
 
-- Python `>=3.10,<3.15`
-- `poetry`
-- `dvc`
+- 4 encoder layers + 4 decoder layers
+- Kernel size: 5
+- Parameter count: ~1.7M
 
-Установка:
+### Demucs v3 (Tiny)
 
-1. Установить зависимости
+A simplified version of Facebook's Demucs model, optimized for faster training/inference.
+
+**Configuration:**
+
+- 32 channels, depth 4, kernel size 8
+- Parameter count: ~1.6M
+
+Both models use PyTorch Lightning for training and support multiple loss functions (SI-SDR, SI-SDR + L1, SI-SDR + L2).
+
+## Quick Start
+
+### Setup
+
+1. **Clone the repository**
+
+   ```bash
+   git clone <repository-url>
+   cd speech-denoiser-ml
+   ```
+
+2. **Create and activate a Python environment** (Python ≥3.10, <3.15)
+
+   ```bash
+   python -m venv venv
+   source venv/bin/activate
+   ```
+
+3. **Install dependencies with Poetry**
+
+   ```bash
+   pip install poetry
+   poetry install --with dev
+   ```
+
+4. **Optional: Install model-specific extras**
+
+   ```bash
+   # For Demucs model support
+   poetry install --with dev -E demucs
+
+   # For Triton inference server support (Linux only)
+   poetry install --with dev -E triton
+   ```
+
+5. **Install pre-commit hooks** (for code quality)
+
+   ```bash
+   pre-commit install
+   ```
+
+6. **Verify installation**
+   ```bash
+   poetry run python -c "import torch; print('PyTorch:', torch.__version__); print('CUDA available:', torch.cuda.is_available())"
+   ```
+
+### Data Preparation
+
+Data is automatically pulled from DVC storage when needed. To manually restore:
 
 ```bash
-poetry install --with dev
+poetry run speech-denoiser dvc_pull
 ```
 
-Если планируете обучать **Demucs**, установите extra-зависимости:
+This will run `dvc pull` and, on a clean machine, download+extract `dvcstore.tar.gz` (from `dvc.store_url`) into `../dvcstore` and retry.
+
+## Training
+
+### Train the DAE baseline model
 
 ```bash
-poetry install --with dev -E demucs
-```
-
-2. (Опционально) Включить CUDA (GPU) для PyTorch
-
-По умолчанию Poetry может поставить CPU-сборку `torch`. Для обучения на GPU выполните:
-
-```bash
-poetry run speech-denoiser setup_cuda
-```
-
-Если у вас Windows + Python 3.13 и после установки всё равно `cuda=False`, используйте Python 3.12 (для него CUDA wheels обычно доступны).
-
-Проверка:
-
-```bash
-poetry run python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
-```
-
-3. Установить git hooks
-
-```bash
-poetry run pre-commit install
-poetry run pre-commit run -a
-```
-
-3. (Важно) Настроить DVC remote
-
-В репозитории включен DVC tracking для `data/train` и `data/test`, но **remote должен быть доступен проверяющему**.
-На некоторых аккаунтах Google OAuth для DVC (`gdrive`) может быть заблокирован ("Приложение заблокировано").
-В этом репозитории добавлен простой способ скачать датасет **без OAuth** через `gdown`.
-
-### Скачать датасет через gdown (рекомендуется)
-
-Команда скачает публичную Google Drive папку в `data/` (ссылка уже прописана в `configs/data/dataset.yaml`):
-
-```bash
-poetry run speech-denoiser download_data
-```
-
-Проверка наличия данных:
-
-```bash
-python -c "from pathlib import Path; print((Path('data')/'train').exists(), (Path('data')/'test').exists())"
-```
-
-### DVC remote: Google Drive (опционально)
-
-Если вы загрузили папку `data/` в Google Drive, самый простой вариант — сделать DVC remote типа `gdrive://<FOLDER_ID>`.
-
-1. Получить `FOLDER_ID`
-   - Откройте папку в браузере и возьмите ID из URL вида `.../folders/<FOLDER_ID>`
-   - Или из share-link.
-
-2. Добавить remote и сделать его default:
-
-```bash
-poetry run dvc remote add -d gdrive_data gdrive://<FOLDER_ID>
-poetry run dvc remote modify gdrive_data gdrive_use_service_account false
-```
-
-Если при авторизации появляется ошибка Google вида «Приложение заблокировано…», используйте **Service Account** (рекомендуется для воспроизводимости на “чистой” машине):
-
-1. В Google Cloud Console:
-   - Создайте проект
-   - Включите **Google Drive API**
-   - Создайте **Service Account**
-   - Сгенерируйте ключ **JSON** (скачайте файл)
-
-2. В Google Drive:
-   - Откройте папку `data/` (ту же, что по `FOLDER_ID`)
-   - Поделитесь этой папкой с email сервисного аккаунта (вида `...@....iam.gserviceaccount.com`) с правами **Editor**
-
-3. Локально (путь до JSON укажите свой):
-
-```bash
-poetry run dvc remote modify gdrive_data gdrive_use_service_account true
-poetry run dvc remote modify gdrive_data gdrive_service_account_json_file_path path/to/service-account.json
-```
-
-Важно: `service-account.json` не коммитьте в git. Передайте файл проверяющему отдельно (или настройте свои креды на его машине).
-
-3. Запушить данные в remote (один раз на вашей машине):
-
-```bash
-poetry run dvc push
-```
-
-4. Проверка на “чистой” машине:
-
-```bash
-poetry run dvc pull
-```
-
-Примечание: первый `dvc push/pull` может попросить авторизацию Google (через `pydrive2`) и на некоторых аккаунтах быть заблокирован.
-
-## Train
-
-Тренировка запускается через CLI с Hydra-конфигами из `configs/`:
-
-```bash
+# Default config (demucs model, see configs/config.yaml)
 poetry run speech-denoiser train
+
+# Or explicitly use DAE
+poetry run speech-denoiser train model=dae
+
+# With custom hyperparameters
+poetry run speech-denoiser train model=dae trainer.max_epochs=20 dataset.batch_size=32 model.learning_rate=0.0005
 ```
 
-Тренировка Demucs (как второй вариант модели):
+### Train Demucs v3 Tiny
+
+```bash
+# Use demucs config
+poetry run speech-denoiser train model=demucs
+
+# With SI-SDR + L1 loss (alpha=0.15)
+poetry run speech-denoiser train model=demucs model.loss_function=si_sdr_l1 model.loss_alpha=0.15
+```
+
+### Training Output
+
+Logs and artifacts are saved in:
+
+- **Checkpoints:** `artifacts/checkpoints/` (latest checkpoint: `latest_<model_name>.ckpt`)
+- **Metrics:** `plots/<model_name>/metrics.csv`
+- **Plots:** `plots/<model_name>/{train_loss, val_loss, val_si_sdr}.png`
+- **MLflow:** http://127.0.0.1:8080 (if server is running)
+
+### Loss Functions
+
+The training framework supports multiple loss combinations:
+
+- `si_sdr_loss`: Pure SI-SDR loss (default)
+- `si_sdr_l1`: SI-SDR + α×L1 (Mean Absolute Error)
+- `si_sdr_l2`: SI-SDR + α×MSE
+
+Adjust in config:
+
+```yaml
+loss_function: "si_sdr_l1"
+loss_alpha: 0.1
+```
+
+## Inference
+
+### Quick inference on a single audio file
+
+```bash
+poetry run speech-denoiser infer \
+  --input_wav /path/to/noisy_audio.wav \
+  --ckpt_path artifacts/checkpoints/latest_demucs_v3_tiny.ckpt
+```
+
+**Output:** Enhanced audio saved to `artifacts/predictions/output_clean.wav`
+
+### Evaluate on test set
+
+```bash
+poetry run speech-denoiser eval_test model=demucs
+
+poetry run speech-denoiser eval_test model=demucs eval.save_wavs=true # Strongly not recommended!!
+```
+
+**Output:** Test metrics saved to `plots/<model_name>/test_metrics.csv`
+
+## Production Deployment
+
+### 1. Export Model to ONNX
+
+ONNX format enables deployment to various backends (CPU/GPU inference engines).
+
+```bash
+# Export the latest checkpoint to ONNX
+poetry run speech-denoiser export_onnx model=demucs export.ckpt_path=artifacts/checkpoints/latest_demucs_v3_tiny.ckpt
+
+# Outputs: artifacts/onnx/demucs_v3_tiny/denoiser.onnx
+```
+
+### 2. (Optional) Convert to TensorRT
+
+TensorRT optimization for faster GPU inference (NVIDIA GPUs only), this sadly doesn't work with Demucs model:
+
+```bash
+bash scripts/build_trt_engine.sh artifacts/onnx/DAE_baseline/denoiser.onnx
+```
+
+**Requirements:**
+
+- CUDA-capable GPU
+- TensorRT installed
+- Sample audio for calibration (included in `artifacts/onnx/`)
+
+**Output:** `artifacts/trt/DAE_baseline/denoiser.plan`
+
+### 3. Prepare Triton Model Repository
+
+For serving via [Triton Inference Server](https://developer.nvidia.com/triton-inference-server):
+
+```bash
+# onnx
+poetry run speech-denoiser prepare_triton_repo model=dae triton.backend=onnx
+poetry run speech-denoiser prepare_triton_repo model=demucs triton.backend=onnx
+
+# TensorRT
+poetry run speech-denoiser prepare_triton_repo model=dae triton.backend=trt
+```
+
+Creates directory structure:
+
+```
+triton/
+├── DAE_baseline/
+│   └── onnx/{1/model.onnx, config.pbtxt, meta.json}
+└── demucs_v3_tiny/
+    └── onnx/{1/model.onnx, config.pbtxt, meta.json}
+```
+
+## Inference Server (Triton)
+
+### Launch Triton Inference Server
+
+The server auto-discovers all models of the specified backend.
+
+```bash
+# Serve ONNX models (auto-loads all available ONNX models)
+bash scripts/run_triton.sh --backend onnx
+
+# Serve TensorRT models (auto-loads all available TRT models)
+bash scripts/run_triton.sh --backend trt
+```
+
+In order to run docker container in the background:
+
+```bash
+bash scripts/run_triton.sh --backend onnx --detach
+```
+
+**Backend Notes:**
+
+- **ONNX (Recommended)**: Full support for both models with variable-length audio
+- **TensorRT**: DAE_baseline only. Demucs fails due to dynamic shape incompatibility with TensorRT
+
+Triton will start on:
+
+- **8000** - HTTP inference endpoint
+- **8001** - gRPC endpoint
+- **8002** - Metrics endpoint
+
+### Send Inference Requests
+
+```bash
+# Test with Hydra config override
+poetry run speech-denoiser triton_infer model=dae server.input_wav=<audio.wav>
+```
+
+## Configuration & Hyperparameters
+
+All hyperparameters are managed via [Hydra](https://hydra.cc/).
+
+**Config location:** `configs/`
+
+### Main config files:
+
+- `config.yaml` – Main configuration, paths
+- `model/dae.yaml` – DAE-specific hyperparameters
+- `model/demucs.yaml` – Demucs-specific hyperparameters
+- `audio/audio.yaml` – Audio preprocessing (sample rate, segment length)
+- `dataset/dataset.yaml` – Data paths and batch settings
+- `mlflow/tracking.yaml` – MLflow server URI and experiment naming
+- `trainer/trainer.yaml` – Trainer hyperparameters
+- `server/triton.yaml` – Configuration file for Triton Server
+
+### Hierarchical structure:
+
+```
+configs/
+├── config.yaml              # Root config
+├── trainer
+│   └── trainer.yaml
+├── server
+│   └── triton.yaml
+├── model/
+│   ├── dae.yaml            # DAE baseline
+│   └── demucs.yaml         # Demucs model
+├── audio/
+│   └── audio.yaml          # Audio parameters
+├── data/
+│   └── dataset.yaml        # Data paths
+└── mlflow/
+    └── tracking.yaml       # MLflow settings
+```
+
+## Logging & Monitoring
+
+### MLflow
+
+Training runs are automatically logged to MLflow if available:
+
+```bash
+mlflow ui
+```
+
+### CSV & Plots
+
+During training, metrics are also saved to CSV:
+
+```
+plots/<model_name>/
+├── metrics.csv              # Full training metrics
+├── metrics_last_row.csv     # Summary of final epoch
+├── train_loss.png           # Loss curve
+├── val_loss.png             # Validation loss curve
+└── val_si_sdr.png           # SI-SDR metric curve
+```
+
+## Code Quality
+
+### Pre-commit hooks
+
+Automatic code quality checks before committing:
+
+```bash
+# Already installed with: pre-commit install
+
+# Manual run on all files
+pre-commit run -a
+```
+
+**Tools used:**
+
+- **Black** – Code formatter
+- **isort** – Import organizer
+- **Flake8** – Linter
+- **Prettier** – Non-Python files (YAML, Markdown, etc.)
+
+## Project Structure
+
+```
+speech-denoiser-ml/
+├── README.md                    # This file
+├── pyproject.toml              # Python dependencies (Poetry)
+├── .pre-commit-config.yaml     # Pre-commit hooks config
+├── .gitignore                  # Git ignore rules
+│
+├── speech_denoiser/            # Main package
+│   ├── __init__.py
+│   ├── commands.py             # CLI entry point
+│   ├── train.py                # Training pipeline
+│   ├── infer.py                # Inference script
+│   ├── eval_test.py            # Test evaluation
+│   ├── export.py               # ONNX export
+│   ├── triton.py               # Triton server prep
+│   ├── data.py                 # Data loading (PyTorch Lightning)
+│   ├── losses.py               # Loss functions
+│   ├── lightning_module.py     # PyTorch Lightning module
+│   ├── utils.py                # Utility functions
+│   └── models/
+│       ├── dae.py              # DAE baseline model
+│       └── demucs_wrapper.py   # Demucs model wrapper
+│
+├── configs/                    # Hydra configuration files
+│   ├── config.yaml             # Root config
+│   ├── model/{dae,demucs}.yaml
+│   ├── audio/audio.yaml
+│   ├── data/dataset.yaml
+│   └── mlflow/tracking.yaml
+│
+├── scripts/                    # Shell/helper scripts
+│   ├── build_trt_engine.sh     # TensorRT conversion
+│   ├── run_triton.sh           # Launch Triton server
+│   └── ...
+│
+├── data/                       # Datasets (managed by DVC)
+│   ├── train/
+│   ├── test/
+│   ├── train.dvc
+│   └── test.dvc
+│
+├── artifacts/                  # Training outputs
+│   ├── checkpoints/            # Model checkpoints (.ckpt)
+│   ├── onnx/                   # Exported ONNX models (DVC)
+│   └── predictions/            # Inference results
+│
+├── triton/                     # Triton model repositories
+│   ├── <model_name>/
+│   │   ├── onnx/
+│   │   │   └── denoiser_<model_name>/{config.pbtxt, 1/model.onnx, meta.json}
+│   │   └── trt/
+│   │       └── denoiser_<model_name>/{config.pbtxt, 1/model.plan, meta.json}
+│   └── .dvc                    # DVC tracking
+│
+├── plots/                      # Training logs and plots
+│   ├── <model_name>/
+│   │   ├── metrics.csv
+│   │   ├── metrics_last_row.csv
+│   │   ├── train_loss.png
+│   │   ├── val_loss.png
+│   │   ├── val_si_sdr.png
+│   │   └── lightning_logs/
+│   └── README.md
+│
+└── .dvc/                       # DVC configuration
+    └── config                  # Remote storage settings
+```
+
+## Reproducibility
+
+For reproducible results:
+
+1. **Fixed Seeds:** `seed: 42` in `config.yaml`
+2. **Deterministic Data Split:** Speaker-based split with fixed seed
+3. **Git Tracking:** Commit ID is logged to MLflow
+4. **DVC Versioning:** Data and model artifacts are version-controlled
+
+To reproduce training:
 
 ```bash
 poetry run speech-denoiser train model=demucs
 ```
 
-Переопределение параметров Hydra:
+## Dependencies
+
+All dependencies are specified in `pyproject.toml`:
+
+**Core:**
+
+- PyTorch ≥2.6.0 with torchaudio
+- PyTorch Lightning ≥2.6.0
+- Hydra-core ≥1.3.2
+- DVC ≥3.64.2
+
+**Optional:**
+
+- `demucs` – For Demucs model (install with `-E demucs`)
+- `tritonclient` – For Triton client (Linux only, install with `-E triton`)
+
+For development:
 
 ```bash
-poetry run speech-denoiser train trainer.max_epochs=10 data.batch_size=8
+poetry install --with dev
 ```
 
-Во время обучения логируются метрики и гиперпараметры в MLflow (по умолчанию ожидается `http://127.0.0.1:8080`).
+## Troubleshooting
 
-## Production preparation
+### MLflow server not reachable
 
-Экспорт в ONNX (после обучения):
+If training starts but MLflow logging fails, the training continues without logging. Start the MLflow server:
 
 ```bash
-poetry run speech-denoiser export_onnx export.ckpt_path=artifacts/checkpoints/latest_DAE_baseline.ckpt
+mlflow ui --host 127.0.0.1 --port 8080
 ```
 
-Артефакты:
+### DVC pull fails
 
-- чекпойнты: `artifacts/checkpoints/`
-- onnx: `artifacts/onnx/`
-- графики: `plots/<model_name>/` (например `plots/DAE_baseline/` или `plots/demucs_v3_tiny/`)
-
-## Infer
-
-Инференс на новом wav:
+Ensure DVC remote is configured and accessible:
 
 ```bash
-poetry run speech-denoiser infer \
-	ckpt_path=artifacts/checkpoints/latest_DAE_baseline.ckpt \
-	input_wav=path/to/noisy.wav \
-	output_dir=artifacts/predictions
+dvc remote list
+dvc pull
 ```
 
-Формат входа: mono `wav` (если стерео — будет сведено в mono).
+### CUDA/GPU issues
 
-## Inference server (Triton) (optional, max points)
-
-Ниже описан вариант сервинга через **NVIDIA Triton Inference Server**.
-
-### 1) Подготовить Triton model repository из чекпойнта
-
-Команда экспортирует ONNX и создаст Triton model repository в `artifacts/triton/<model_name>/`:
+Check PyTorch CUDA setup:
 
 ```bash
-poetry run speech-denoiser prepare_triton_repo \
-	model=dae export.ckpt_path=artifacts/checkpoints/latest_DAE_baseline.ckpt
-
-# Demucs (если вы обучили/скачали чекпойнт):
-poetry run speech-denoiser prepare_triton_repo \
-   model=demucs export.ckpt_path=artifacts/checkpoints/latest_demucs_v3_tiny.ckpt
+poetry run python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name())"
 ```
 
-По умолчанию имя модели для Triton: `denoiser_onnx_${model.model_name}` (чтобы можно было держать несколько моделей в одном репозитории), путь берётся из Hydra: `paths.triton_repo_dir`.
+If CUDA is not available, PyTorch will automatically use CPU.
 
-Если хотите поднять **сразу DAE + Demucs в одном Triton**, соберите общий model repo:
+### Pre-commit hook failures
+
+Some hooks may auto-fix files. Re-stage and commit:
 
 ```bash
-poetry run speech-denoiser prepare_triton_repo \
-   model=dae export.ckpt_path=artifacts/checkpoints/latest_DAE_baseline.ckpt \
-   triton.model_repo_dir=artifacts/triton/all
-
-poetry run speech-denoiser prepare_triton_repo \
-   model=demucs export.ckpt_path=artifacts/checkpoints/latest_demucs_v3_tiny.ckpt \
-   triton.model_repo_dir=artifacts/triton/all
+pre-commit run -a
+git add .
+git commit -m "Fix code style"
 ```
 
-И запуск Triton тогда делайте на `artifacts/triton/all`.
+## Contributing
 
-### 2) Запустить Triton Server
+1. Create a feature branch
+2. Make changes and test locally
+3. Run `pre-commit run -a` before committing
+4. Push and create a pull request
 
-Требуется Docker + NVIDIA Container Toolkit (или WSL2 с GPU).
+## License
 
-Linux/WSL:
+See [LICENSE](LICENSE) file for details.
 
-```bash
-chmod +x scripts/run_triton.sh
-./scripts/run_triton.sh artifacts/triton/DAE_baseline
-```
+## References
 
-Windows (PowerShell):
-
-```powershell
-./scripts/run_triton.ps1 -ModelRepo artifacts/triton/DAE_baseline
-```
-
-Triton поднимется на портах:
-
-- HTTP: `8000`
-- gRPC: `8001`
-- metrics: `8002`
-
-### 3) Сделать запрос к Triton (клиент)
-
-Установить optional dependency:
-
-```bash
-poetry install -E triton
-```
-
-Примечание: `tritonclient` как правило доступен только для Linux. Если у вас Windows,
-используйте WSL2/Linux для клиента (или делайте запросы из другого окружения).
-
-Запустить инференс через Triton:
-
-```bash
-poetry run speech-denoiser triton_infer \
-	triton.input_wav=path/to/noisy.wav \
-	triton.url=127.0.0.1:8000
-```
-
-Выход будет записан в `artifacts/predictions/triton/`.
-
-### (Опционально) TensorRT
-
-Можно собрать TensorRT engine из ONNX через `trtexec` в NVIDIA контейнере:
-
-Linux/WSL:
-
-```bash
-chmod +x scripts/build_trt_engine.sh
-./scripts/build_trt_engine.sh artifacts/onnx/DAE_baseline/denoiser.onnx artifacts/triton/DAE_baseline
-```
-
-Windows (PowerShell):
-
-```powershell
-./scripts/build_trt_engine.ps1 -OnnxPath artifacts/onnx/DAE_baseline/denoiser.onnx -TritonRepo artifacts/triton/DAE_baseline
-```
-
-Далее нужно добавить `config.pbtxt` для TensorRT backend (`platform: tensorrt_plan`).
+- Demucs: https://github.com/facebookresearch/demucs
+- SI-SDR metric: https://arxiv.org/abs/1902.07891
+- PyTorch Lightning: https://www.pytorchlightning.ai
+- Hydra: https://hydra.cc
+- DVC: https://dvc.org
+- Triton Inference Server: https://github.com/triton-inference-server/server

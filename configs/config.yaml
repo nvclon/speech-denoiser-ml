@@ -1,12 +1,26 @@
 defaults:
-  - data: dataset
+  - dataset: dataset
   - audio: audio
-  - model: dae
+  - model: demucs
+  - trainer: trainer
+  - server: triton
   - mlflow: tracking
   - _self_
 
 seed: 42
 project_name: "Speech Denoiser"
+
+# DVC store bootstrap (archive-based sharing)
+dvc:
+  # Public link to `dvcstore.tar.gz` (Google Drive link is OK).
+  # Used by `poetry run speech-denoiser download_models` when no URL is provided.
+  store_url: "https://drive.google.com/file/d/1QpQC5nR7iX2suPYOcvVYGBY0Ynku_czh/view?usp=sharing"
+
+  # Where the extracted `dvcstore/` folder should live, relative to repo root.
+  store_dir: "../dvcstore"
+
+  # DVC remote name configured in this repo.
+  remote_name: "local_data"
 
 paths:
   artifacts_dir: "artifacts"
@@ -14,39 +28,19 @@ paths:
   onnx_dir: "${paths.artifacts_dir}/onnx"
   predictions_dir: "${paths.artifacts_dir}/predictions"
   plots_dir: "plots/${model.model_name}"
-  triton_repo_dir: "${paths.artifacts_dir}/triton/${model.model_name}"
-
-trainer:
-  max_epochs: 5
-  accelerator: "auto"
-  devices: "auto"
-  precision: 32
-  accumulate_grad_batches: 1
-  fast_dev_run: false
-  limit_train_batches: 1.0
-  limit_val_batches: 1.0
-  num_sanity_val_steps: 2
-  log_every_n_steps: 50
+  triton_repo_dir: "triton/${model.model_name}"
 
 infer:
-  ckpt_path: null
+  ckpt_path: "${paths.artifacts_dir}/checkpoints/latest_${model.model_name}.ckpt"
   input_wav: null
   output_dir: "${paths.predictions_dir}"
 
 eval:
-  ckpt_path: null
+  ckpt_path: "${paths.artifacts_dir}/checkpoints/latest_${model.model_name}.ckpt"
   save_wavs: false
   output_dir: "${paths.predictions_dir}/test"
   metrics_csv: "${paths.plots_dir}/test_metrics.csv"
 
 export:
-  ckpt_path: null
+  ckpt_path: "${paths.artifacts_dir}/checkpoints/latest_${model.model_name}.ckpt"
   opset: 18
-
-triton:
-  model_name: "denoiser_onnx_${model.model_name}"
-  model_version: 1
-  model_repo_dir: "${paths.triton_repo_dir}"
-  url: "127.0.0.1:8000"
-  input_wav: null
-  output_dir: "${paths.predictions_dir}/triton"

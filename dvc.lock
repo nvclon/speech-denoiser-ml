@@ -1,0 +1,33 @@
+schema: '2.0'
+stages:
+  data:
+    cmd: 'true'
+    outs:
+    - path: data/test
+      hash: md5
+      md5: 363b11569601ecacc0877129f135c0bb.dir
+      size: 397902360
+      nfiles: 1648
+    - path: data/train
+      hash: md5
+      md5: b19324574fef12fc0bfd2574ddc0a651.dir
+      size: 6492236940
+      nfiles: 23144
+  artifacts:
+    cmd: 'true'
+    outs:
+    - path: artifacts/checkpoints
+      hash: md5
+      md5: c88859eb263b0f81f8bbf090c05bf6c4.dir
+      size: 40167581
+      nfiles: 2
+    - path: artifacts/onnx
+      hash: md5
+      md5: 057a3d7e25c5f5894cd5f5b5bde485b9.dir
+      size: 14116789
+      nfiles: 4
+    - path: artifacts/trt
+      hash: md5
+      md5: 14c0e64482f6cd04f4175809c513d249.dir
+      size: 4370060
+      nfiles: 1

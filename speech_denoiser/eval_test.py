@@ -11,7 +11,10 @@ from omegaconf import DictConfig
 
 from speech_denoiser.lightning_module import DenoiserLightningModule
 from speech_denoiser.losses import si_sdr
-from speech_denoiser.utils import ensure_dir, try_dvc_pull, try_gdown_folder
+from speech_denoiser.utils import (
+    dvc_pull_with_bootstrap,
+    ensure_dir,
+)
 
 
 def _repo_root() -> Path:
@@ -41,23 +44,21 @@ def _resample_if_needed(wav: torch.Tensor, sr: int, target_sr: int) -> torch.Ten
 
 def _maybe_pull_test_data(cfg: DictConfig) -> None:
     repo_root = _repo_root()
-    data_dir = repo_root / str(cfg.data.data_dir)
+    data_dir = repo_root / str(cfg.dataset.data_dir)
     test_dir = data_dir / "test"
     if test_dir.exists():
         return
 
-    gdrive_url = getattr(cfg.data, "gdrive_folder_url", None)
-    if gdrive_url:
-        try:
-            print("[INFO] test data not found; downloading from Google Drive via gdown...")
-            try_gdown_folder(str(gdrive_url), output_dir=data_dir)
-        except Exception as e:
-            print(f"[WARN] gdown download failed: {e}")
-
-    if test_dir.exists():
-        return
-
-    try_dvc_pull(repo_root, targets=["data/test.dvc"])
+    store_url = getattr(getattr(cfg, "dvc", None), "store_url", None)
+    store_dir_cfg = getattr(getattr(cfg, "dvc", None), "store_dir", "../dvcstore")
+    remote_name = getattr(getattr(cfg, "dvc", None), "remote_name", "local_data")
+    store_dir = (repo_root / str(store_dir_cfg)).resolve()
+    dvc_pull_with_bootstrap(
+        repo_root,
+        store_url=store_url,
+        store_dir=store_dir,
+        remote_name=str(remote_name),
+    )
 
 
 def eval_test(cfg: DictConfig) -> None:
@@ -74,12 +75,12 @@ def eval_test(cfg: DictConfig) -> None:
     if not ckpt_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
 
-    noisy_dir = repo_root / str(cfg.data.test_noisy_path)
-    clean_dir = repo_root / str(cfg.data.test_clean_path)
+    noisy_dir = repo_root / str(cfg.dataset.test_noisy_path)
+    clean_dir = repo_root / str(cfg.dataset.test_clean_path)
     if not noisy_dir.exists() or not clean_dir.exists():
         raise FileNotFoundError(
             f"Test folders not found. Expected {noisy_dir} and {clean_dir}. "
-            "Download with `poetry run speech-denoiser download_data`."
+            "Restore with `poetry run speech-denoiser dvc_pull`."
         )
 
     save_wavs = bool(getattr(cfg.eval, "save_wavs", False))

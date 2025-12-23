@@ -13,7 +13,11 @@ from pytorch_lightning.loggers import CSVLogger, MLFlowLogger
 
 from speech_denoiser.data import SpeechDataModule
 from speech_denoiser.lightning_module import DenoiserLightningModule
-from speech_denoiser.utils import ensure_dir, git_commit_id, try_dvc_pull, try_gdown_folder
+from speech_denoiser.utils import (
+    dvc_pull_with_bootstrap,
+    ensure_dir,
+    git_commit_id,
+)
 
 
 def _repo_root() -> Path:
@@ -22,31 +26,30 @@ def _repo_root() -> Path:
 
 def _maybe_pull_data(cfg: DictConfig) -> None:
     repo_root = _repo_root()
-    data_dir = repo_root / str(cfg.data.data_dir)
+    data_dir = repo_root / str(cfg.dataset.data_dir)
     train_dir = data_dir / "train"
     test_dir = data_dir / "test"
 
     if train_dir.exists() and test_dir.exists():
         return
 
-    gdrive_url = getattr(cfg.data, "gdrive_folder_url", None)
-    if gdrive_url:
-        try:
-            print("[INFO] data/ not found; downloading from Google Drive via gdown...")
-            try_gdown_folder(str(gdrive_url), output_dir=data_dir)
-        except Exception as e:
-            print(f"[WARN] gdown download failed: {e}")
-
-    if train_dir.exists() and test_dir.exists():
-        return
-
-    # Fall back to DVC (if remote is configured and accessible).
-    try_dvc_pull(repo_root, targets=["data/train.dvc", "data/test.dvc"])
+    # Single path: `dvc pull` (and if it fails, download+extract dvcstore archive and retry).
+    store_url = getattr(getattr(cfg, "dvc", None), "store_url", None)
+    store_dir_cfg = getattr(getattr(cfg, "dvc", None), "store_dir", "../dvcstore")
+    remote_name = getattr(getattr(cfg, "dvc", None), "remote_name", "local_data")
+    store_dir = (repo_root / str(store_dir_cfg)).resolve()
+    dvc_pull_with_bootstrap(
+        repo_root,
+        store_url=store_url,
+        store_dir=store_dir,
+        remote_name=str(remote_name),
+    )
 
     if not (train_dir.exists() and test_dir.exists()):
         raise FileNotFoundError(
-            "Dataset is missing. Download it with `poetry run speech-denoiser download_data` "
-            "or configure DVC remote and run `poetry run dvc pull`."
+            "Dataset is missing and automatic restore/download failed. "
+            "Provide data/train and data/test, or put data/dataset.zip and rerun, "
+            "or run `poetry run speech-denoiser dvc_pull`."
         )
 
 
@@ -201,15 +204,17 @@ def train(cfg: DictConfig) -> None:
         demucs_channels=int(getattr(model_cfg, "channels", 32)),
         demucs_depth=int(getattr(model_cfg, "depth", 4)),
         demucs_kernel_size=int(getattr(model_cfg, "kernel_size", 8)),
+        loss_type=str(getattr(model_cfg, "loss_function", "si_sdr_loss")),
+        loss_alpha=float(getattr(model_cfg, "loss_alpha", 0.1)),
     )
 
     dm = SpeechDataModule(
-        train_noisy_dir=repo_root / str(cfg.data.train_noisy_path),
-        train_clean_dir=repo_root / str(cfg.data.train_clean_path),
+        train_noisy_dir=repo_root / str(cfg.dataset.train_noisy_path),
+        train_clean_dir=repo_root / str(cfg.dataset.train_clean_path),
         sample_rate=int(cfg.audio.sample_rate),
         segment_seconds=float(cfg.audio.segment_length),
-        batch_size=int(cfg.data.batch_size),
-        num_workers=int(cfg.data.num_workers),
+        batch_size=int(cfg.dataset.batch_size),
+        num_workers=int(cfg.dataset.num_workers),
         seed=int(cfg.seed),
         val_speaker_fraction=0.15,
     )
