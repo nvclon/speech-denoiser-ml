@@ -5,22 +5,11 @@ defaults:
   - trainer: trainer
   - server: triton
   - mlflow: tracking
+  - dvc: dvc_cfg
   - _self_
 
 seed: 42
 project_name: "Speech Denoiser"
-
-# DVC store bootstrap (archive-based sharing)
-dvc:
-  # Public link to `dvcstore.tar.gz` (Google Drive link is OK).
-  # Used by `poetry run speech-denoiser download_models` when no URL is provided.
-  store_url: "https://drive.google.com/file/d/1QpQC5nR7iX2suPYOcvVYGBY0Ynku_czh/view?usp=sharing"
-
-  # Where the extracted `dvcstore/` folder should live, relative to repo root.
-  store_dir: "../dvcstore"
-
-  # DVC remote name configured in this repo.
-  remote_name: "local_data"
 
 paths:
   artifacts_dir: "artifacts"

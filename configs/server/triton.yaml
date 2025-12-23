@@ -1,17 +1,10 @@
-# Triton Inference Server configuration
-# Backend to serve on Triton server:
-# - onnx: ONNXRuntime backend (created by `prepare_triton_repo`)
-# - trt:  TensorRT backend (created by `scripts/build_trt_engine.sh`)
 backend: "onnx"
 
-# Model name for inference. Maps to triton/<model.model_name>/<backend>/
 model_name: "${model.model_name}"
 model_version: 1
 model_repo_dir: "${paths.triton_repo_dir}/${server.backend}"
 
-# Inference server endpoint
 url: "127.0.0.1:8000"
 
-# Inference input/output
 input_wav: null
 output_dir: "${paths.predictions_dir}/triton"

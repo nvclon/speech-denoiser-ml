@@ -1,14 +1,8 @@
-# Dataset configuration
 data_dir: "data"
 train_clean_path: "${dataset.data_dir}/train/clean"
 train_noisy_path: "${dataset.data_dir}/train/noisy"
 test_noisy_path: "${dataset.data_dir}/test/noisy_testset_wav"
 test_clean_path: "${dataset.data_dir}/test/clean_testset_wav"
-
-# Public dataset archive URL (zip).
-# Used by `speech-denoiser download_data` as a non-interactive fallback.
-# Can be a Google Drive file link (gdown supports it).
-dataset_url: "https://drive.google.com/file/d/19BR6TGfLSU52X9cOGhPcPGj2r4f8jv3g/view?usp=sharing"
 
 batch_size: 4
 num_workers: 7
