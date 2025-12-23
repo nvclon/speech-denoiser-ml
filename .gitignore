@@ -225,10 +225,8 @@ data/**/*.flac
 data/**/*.mp3
 data/dataset.zip
 
-# Plots and logs are generated during training
 plots/**
 
-# Model / export artifacts (safety net)
 *.ckpt
 *.pth
 *.pt

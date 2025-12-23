@@ -73,13 +73,7 @@ Both models use PyTorch Lightning for training and support multiple loss functio
    cd speech-denoiser-ml
    ```
 
-2. **Install Poetry**
-
-   ```bash
-   pip install poetry
-   ```
-
-3. **Install dependencies (creates Poetry virtualenv)**
+2. **Install dependencies (creates Poetry virtualenv)**
 
    ```bash
    poetry install --with dev
@@ -88,21 +82,21 @@ Both models use PyTorch Lightning for training and support multiple loss functio
    poetry install --with dev -E demucs -E triton
    ```
 
-4. **Enter the Poetry environment**
+3. **Enter the Poetry environment**
 
    ```bash
-   poetry shell
+   source $(poetry env info --path)/bin/activate
    ```
 
    All commands below assume you are inside `poetry shell`.
 
-5. **Install pre-commit hooks** (for code quality)
+4. **Install pre-commit hooks** (for code quality)
 
    ```bash
    pre-commit install
    ```
 
-6. **Verify installation**
+5. **Verify CUDA** (Actually important)
 
    ```bash
    python -c "import torch; print('PyTorch:', torch.__version__); print('CUDA available:', torch.cuda.is_available())"
@@ -179,7 +173,6 @@ speech-denoiser infer model=demucs \
 # Optionally override checkpoint/output
 speech-denoiser infer model=demucs \
    infer.input_wav=/path/to/noisy_audio.wav \
-   infer.ckpt_path=artifacts/checkpoints/latest_demucs_v3_tiny.ckpt \
    infer.output_dir=artifacts/predictions
 ```
 
@@ -218,7 +211,7 @@ Per-file CSV outputs:
 - `plots/DAE_baseline/test_metrics.csv`
 - `plots/demucs_v3_tiny/test_metrics.csv`
 
-### Audio example (5 seconds)
+### Audio example
 
 Source: `data/test/noisy_testset_wav/p232_001.wav`
 
@@ -281,7 +274,7 @@ triton/
    └── onnx/{config.pbtxt, meta.json, 1/model.onnx}
 ```
 
-## Inference Server (Triton)
+## Inference Server (with Triton)
 
 ### Launch Triton Inference Server
 
@@ -301,7 +294,7 @@ In order to run docker container in the background:
 bash scripts/run_triton.sh --backend onnx --detach
 ```
 
-**Backend Notes:**
+**Important Backend Notes:**
 
 - **ONNX (Recommended)**: Full support for both models with variable-length audio
 - **TensorRT**: DAE_baseline only. Demucs fails due to dynamic shape incompatibility with TensorRT
@@ -335,25 +328,28 @@ All hyperparameters are managed via [Hydra](https://hydra.cc/).
 - `mlflow/tracking.yaml` – MLflow server URI and experiment naming
 - `trainer/trainer.yaml` – Trainer hyperparameters
 - `server/triton.yaml` – Configuration file for Triton Server
+- `dvc/dvc_cfg.yaml` – Some paths and urls for DVC
 
 ### Hierarchical structure:
 
 ```
 configs/
-├── config.yaml              # Root config
+├── config.yaml
 ├── trainer
 │   └── trainer.yaml
 ├── server
 │   └── triton.yaml
 ├── model/
-│   ├── dae.yaml            # DAE baseline
-│   └── demucs.yaml         # Demucs model
+│   ├── dae.yaml
+│   └── demucs.yaml
 ├── audio/
-│   └── audio.yaml          # Audio parameters
+│   └── audio.yaml
 ├── dataset/
-│   └── dataset.yaml        # Data paths
-└── mlflow/
-    └── tracking.yaml       # MLflow settings
+│   └── dataset.yaml
+├── mlflow/
+│   └── tracking.yaml
+└── dvc/
+    └── dvc_cfg.yaml
 ```
 
 ## Logging & Monitoring
@@ -363,8 +359,7 @@ configs/
 Training runs are automatically logged to MLflow if available:
 
 ```bash
-# Run inside `poetry shell`
-mlflow ui
+mlflow ui --host 127.0.0.1 --port 8080
 ```
 
 ### CSV & Plots
@@ -384,12 +379,9 @@ plots/<model_name>/
 
 ### Pre-commit hooks
 
-Automatic code quality checks before committing:
+Automatic code quality checks before committing. Use this command to check code manually:
 
 ```bash
-# Already installed with: pre-commit install
-
-# Manual run on all files
 pre-commit run -a
 ```
 
@@ -404,56 +396,56 @@ pre-commit run -a
 
 ```
 speech-denoiser-ml/
-├── README.md                    # This file
-├── pyproject.toml              # Python dependencies (Poetry)
-├── dvc.yaml                     # DVC pipeline (data + artifacts)
-├── dvc.lock                     # Locked DVC state
-├── .pre-commit-config.yaml     # Pre-commit hooks config
-├── .gitignore                  # Git ignore rules
+├── README.md
+├── pyproject.toml
+├── dvc.yaml
+├── dvc.lock
+├── .pre-commit-config.yaml
+├── .gitignore
 │
-├── speech_denoiser/            # Main package
+├── speech_denoiser/
 │   ├── __init__.py
-│   ├── commands.py             # CLI entry point
-│   ├── train.py                # Training pipeline
-│   ├── infer.py                # Inference script
-│   ├── eval_test.py            # Test evaluation
-│   ├── export.py               # ONNX export
-│   ├── triton.py               # Triton server prep
-│   ├── data.py                 # Data loading (PyTorch Lightning)
-│   ├── losses.py               # Loss functions
-│   ├── lightning_module.py     # PyTorch Lightning module
-│   ├── utils.py                # Utility functions
+│   ├── commands.py
+│   ├── train.py
+│   ├── infer.py
+│   ├── eval_test.py
+│   ├── export.py
+│   ├── triton.py
+│   ├── data.py
+│   ├── losses.py
+│   ├── lightning_module.py
+│   ├── utils.py
 │   └── models/
-│       ├── dae.py              # DAE baseline model
-│       └── demucs_wrapper.py   # Demucs model wrapper
+│       ├── dae.py
+│       └── demucs_wrapper.py
 │
-├── configs/                    # Hydra configuration files
-│   ├── config.yaml             # Root config
+├── configs/
+│   ├── config.yaml
 │   ├── model/{dae,demucs}.yaml
 │   ├── audio/audio.yaml
 │   ├── dataset/dataset.yaml
 │   └── mlflow/tracking.yaml
 │
-├── scripts/                    # Shell/helper scripts
-│   ├── build_trt_engine.sh     # TensorRT conversion
-│   ├── run_triton.sh           # Launch Triton server
-│   └── ...
+├── scripts/
+│   ├── build_trt_engine.sh
+│   └── run_triton.sh
 │
-├── data/                       # Datasets (managed by DVC)
+├── data/
 │   ├── train/
 │   └── test/
 │
-├── artifacts/                  # Training outputs
+├── artifacts/
 │   ├── checkpoints/            # Model checkpoints (.ckpt)
-│   ├── onnx/                   # Exported ONNX models (DVC)
+│   ├── onnx/                   # ONNX models
+│   ├── trt/                    # TensorRT models
 │   └── predictions/            # Inference results
 │
-├── triton/                     # Triton model repositories
+├── triton/
 │   ├── <model_name>/
 │   │   ├── onnx/{config.pbtxt, meta.json, 1/model.onnx}
 │   │   └── trt/{config.pbtxt, meta.json, 1/model.plan}
 │
-├── plots/                      # Training logs and plots
+├── plots/
 │   ├── <model_name>/
 │   │   ├── metrics.csv
 │   │   ├── metrics_last_row.csv
@@ -463,8 +455,8 @@ speech-denoiser-ml/
 │   │   └── lightning_logs/
 │   └── README.md
 │
-└── .dvc/                       # DVC configuration
-    └── config                  # Remote storage settings
+└── .dvc/
+    └── config
 ```
 
 ## Reproducibility
@@ -473,14 +465,7 @@ For reproducible results:
 
 1. **Fixed Seeds:** `seed: 42` in `config.yaml`
 2. **Deterministic Data Split:** Speaker-based split with fixed seed
-3. **Git Tracking:** Commit ID is logged to MLflow
-4. **DVC Versioning:** Data and model artifacts are version-controlled
-
-To reproduce training:
-
-```bash
-speech-denoiser train model=demucs
-```
+3. **DVC Versioning:** Data and model artifacts are version-controlled, so do not touch any dvc related files without a reason
 
 ## Dependencies
 
@@ -532,7 +517,13 @@ Check PyTorch CUDA setup:
 python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name())"
 ```
 
-If CUDA is not available, PyTorch will automatically use CPU.
+If CUDA is not available, you can try use
+
+```python
+speech-denoiser setup_cuda
+```
+
+but torch with cuda is large.
 
 ### Pre-commit hook failures
 
@@ -558,8 +549,11 @@ See [LICENSE](LICENSE) file for details.
 ## References
 
 - Demucs: https://github.com/facebookresearch/demucs
-- SI-SDR metric: https://arxiv.org/abs/1902.07891
 - PyTorch Lightning: https://www.pytorchlightning.ai
 - Hydra: https://hydra.cc
 - DVC: https://dvc.org
 - Triton Inference Server: https://github.com/triton-inference-server/server
+
+## Authors
+
+- ![nvclon](https://github.com/nvclon)
