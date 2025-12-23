@@ -172,12 +172,18 @@ loss_alpha: 0.1
 ### Quick inference on a single audio file
 
 ```bash
-poetry run speech-denoiser infer \
-  --input_wav /path/to/noisy_audio.wav \
-  --ckpt_path artifacts/checkpoints/latest_demucs_v3_tiny.ckpt
+# Hydra overrides
+poetry run speech-denoiser infer model=demucs \
+   infer.input_wav=/path/to/noisy_audio.wav
+
+# Optionally override checkpoint/output
+poetry run speech-denoiser infer model=demucs \
+   infer.input_wav=/path/to/noisy_audio.wav \
+   infer.ckpt_path=artifacts/checkpoints/latest_demucs_v3_tiny.ckpt \
+   infer.output_dir=artifacts/predictions
 ```
 
-**Output:** Enhanced audio saved to `artifacts/predictions/output_clean.wav`
+**Output:** Enhanced audio saved to `artifacts/predictions/denoised_<input_stem>.wav`
 
 ### Evaluate on test set
 
@@ -188,6 +194,45 @@ poetry run speech-denoiser eval_test model=demucs eval.save_wavs=true # Strongly
 ```
 
 **Output:** Test metrics saved to `plots/<model_name>/test_metrics.csv`
+
+## Tests
+
+### Test-set evaluation (`eval_test`)
+
+Reproduce:
+
+```bash
+poetry run speech-denoiser eval_test model=dae
+poetry run speech-denoiser eval_test model=demucs
+```
+
+Results (run on 23 Dec 2025):
+
+| Model          | Mean SI-SDR (noisy), dB | Mean SI-SDR (denoised), dB | Mean improvement, dB |
+| -------------- | ----------------------: | -------------------------: | -------------------: |
+| DAE_baseline   |                   8.444 |                     10.463 |                2.019 |
+| demucs_v3_tiny |                   8.444 |                     18.460 |               10.016 |
+
+Per-file CSV outputs:
+
+- `plots/DAE_baseline/test_metrics.csv`
+- `plots/demucs_v3_tiny/test_metrics.csv`
+
+### Audio example (5 seconds)
+
+Source: `data/test/noisy_testset_wav/p232_001.wav`
+
+Noisy:
+
+<audio controls src="assets/readme/p232_001_noisy_5s.wav"></audio>
+
+DAE_baseline denoised:
+
+<audio controls src="assets/readme/p232_001_DAE_baseline_denoised_5s.wav"></audio>
+
+demucs_v3_tiny denoised:
+
+<audio controls src="assets/readme/p232_001_demucs_v3_tiny_denoised_5s.wav"></audio>
 
 ## Production Deployment
 
@@ -224,11 +269,11 @@ For serving via [Triton Inference Server](https://developer.nvidia.com/triton-in
 
 ```bash
 # onnx
-poetry run speech-denoiser prepare_triton_repo model=dae triton.backend=onnx
-poetry run speech-denoiser prepare_triton_repo model=demucs triton.backend=onnx
+poetry run speech-denoiser prepare_triton_repo model=dae server.backend=onnx
+poetry run speech-denoiser prepare_triton_repo model=demucs server.backend=onnx
 
 # TensorRT
-poetry run speech-denoiser prepare_triton_repo model=dae triton.backend=trt
+poetry run speech-denoiser prepare_triton_repo model=dae server.backend=trt
 ```
 
 Creates directory structure:
@@ -236,9 +281,10 @@ Creates directory structure:
 ```
 triton/
 ├── DAE_baseline/
-│   └── onnx/{1/model.onnx, config.pbtxt, meta.json}
+│   ├── onnx/{config.pbtxt, meta.json, 1/model.onnx}
+│   └── trt/{config.pbtxt, meta.json, 1/model.plan}
 └── demucs_v3_tiny/
-    └── onnx/{1/model.onnx, config.pbtxt, meta.json}
+   └── onnx/{config.pbtxt, meta.json, 1/model.onnx}
 ```
 
 ## Inference Server (Triton)
@@ -276,7 +322,7 @@ Triton will start on:
 
 ```bash
 # Test with Hydra config override
-poetry run speech-denoiser triton_infer model=dae server.input_wav=<audio.wav>
+poetry run speech-denoiser triton_infer model=dae server.input_wav=/path/to/audio.wav
 ```
 
 ## Configuration & Hyperparameters
@@ -310,7 +356,7 @@ configs/
 │   └── demucs.yaml         # Demucs model
 ├── audio/
 │   └── audio.yaml          # Audio parameters
-├── data/
+├── dataset/
 │   └── dataset.yaml        # Data paths
 └── mlflow/
     └── tracking.yaml       # MLflow settings
@@ -365,6 +411,8 @@ pre-commit run -a
 speech-denoiser-ml/
 ├── README.md                    # This file
 ├── pyproject.toml              # Python dependencies (Poetry)
+├── dvc.yaml                     # DVC pipeline (data + artifacts)
+├── dvc.lock                     # Locked DVC state
 ├── .pre-commit-config.yaml     # Pre-commit hooks config
 ├── .gitignore                  # Git ignore rules
 │
@@ -388,7 +436,7 @@ speech-denoiser-ml/
 │   ├── config.yaml             # Root config
 │   ├── model/{dae,demucs}.yaml
 │   ├── audio/audio.yaml
-│   ├── data/dataset.yaml
+│   ├── dataset/dataset.yaml
 │   └── mlflow/tracking.yaml
 │
 ├── scripts/                    # Shell/helper scripts
@@ -398,9 +446,7 @@ speech-denoiser-ml/
 │
 ├── data/                       # Datasets (managed by DVC)
 │   ├── train/
-│   ├── test/
-│   ├── train.dvc
-│   └── test.dvc
+│   └── test/
 │
 ├── artifacts/                  # Training outputs
 │   ├── checkpoints/            # Model checkpoints (.ckpt)
@@ -409,11 +455,8 @@ speech-denoiser-ml/
 │
 ├── triton/                     # Triton model repositories
 │   ├── <model_name>/
-│   │   ├── onnx/
-│   │   │   └── denoiser_<model_name>/{config.pbtxt, 1/model.onnx, meta.json}
-│   │   └── trt/
-│   │       └── denoiser_<model_name>/{config.pbtxt, 1/model.plan, meta.json}
-│   └── .dvc                    # DVC tracking
+│   │   ├── onnx/{config.pbtxt, meta.json, 1/model.onnx}
+│   │   └── trt/{config.pbtxt, meta.json, 1/model.plan}
 │
 ├── plots/                      # Training logs and plots
 │   ├── <model_name>/

@@ -241,3 +241,6 @@ plots/**
 *.zip
 node_modules
 mlflow.db
+
+# README demo assets (small, intentionally committed)
+!assets/readme/*.wav
